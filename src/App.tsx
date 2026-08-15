@@ -19,6 +19,7 @@ const App = () => {
 
         recorder.onstop = () => {
             const blob  = new Blob(chunksRef.current, {type: 'audio/webm'});
+            console.log('Blob size (bytes):', blob.size, '| Chunks collected:', chunksRef.current.length);
             const url = URL.createObjectURL(blob);
             setAudioURL(url);
             stream.getTracks().forEach((track) => track.stop());
