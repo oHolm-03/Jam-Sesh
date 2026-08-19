@@ -1,4 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
+import Auth from './Auth';
+import {supabase} from './supabaseClient';
 
 const App = () => {
     const [isRecording, setIsRecording] = useState(false);
@@ -13,6 +15,7 @@ const App = () => {
     const [isMonitoring, setIsMonitoring] = useState(false);
     const monitorStreamRef = useRef<MediaStream | null>(null);
     const monitorSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+    const [session, setSession] = useState<any>(null);
 
     useEffect(() => {
         const loadDevices = async () => {
@@ -25,6 +28,15 @@ const App = () => {
             }
         };
         loadDevices();     
+    }, []);
+
+    useEffect(() => {
+      supabase.auth.getSession().then(({data}) => setSession(data.session));
+
+      const {data: listener} = supabase.auth.onAuthStateChange((_event, session) => {
+        setSession(session);
+      });
+      return () => listener.subscription.unsubscribe();
     }, []);
 
     const startMonitoring = async () => {
@@ -139,6 +151,10 @@ const App = () => {
       }
       source.start();
     };
+
+    if(!session){
+      return <Auth onLogin={() => {/* session state updates via onAuthStateChange listener */}} />;
+    }
 
     return (
     <div style={{ padding: 40, fontFamily: 'sans-serif' }}>
