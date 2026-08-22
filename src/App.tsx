@@ -1,4 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
+import Auth from './Auth';
+import {supabase} from './supabaseClient';
+import Projects from './Projects';
 
 const App = () => {
     const [isRecording, setIsRecording] = useState(false);
@@ -13,6 +16,9 @@ const App = () => {
     const [isMonitoring, setIsMonitoring] = useState(false);
     const monitorStreamRef = useRef<MediaStream | null>(null);
     const monitorSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+    const [session, setSession] = useState<any>(null);
+    const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+    const [username, setUsername] = useState<string | null>(null);
 
     useEffect(() => {
         const loadDevices = async () => {
@@ -26,6 +32,34 @@ const App = () => {
         };
         loadDevices();     
     }, []);
+
+    useEffect(() => {
+      supabase.auth.getSession().then(({data}) => setSession(data.session));
+
+      const {data: listener} = supabase.auth.onAuthStateChange((_event, session) => {
+        setSession(session);
+      });
+      return () => listener.subscription.unsubscribe();
+    }, []);
+
+    useEffect(() => {
+      if(!session){
+        setUsername(null);
+        return;
+      }
+      const fetchProfile = async () => {
+        const {data, error} = await supabase
+          .from('profiles')
+          .select('username')
+          .eq('id', session.user.id)
+          .single();
+        
+        if(!error && data) {
+          setUsername(data.username);
+        }
+      };
+      fetchProfile();
+    }, [session]);
 
     const startMonitoring = async () => {
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -139,6 +173,19 @@ const App = () => {
       }
       source.start();
     };
+
+    if(!session){
+      return <Auth onLogin={() => {/* session state updates via onAuthStateChange listener */}} />;
+    }
+
+    if(!currentProjectId){
+      return (
+        <div>
+          {username && <p style={{padding: '20px 40px 0'}}>Welcome, {username}!</p>}
+          <Projects onSelectProject={setCurrentProjectId} />
+        </div>
+      );
+    }
 
     return (
     <div style={{ padding: 40, fontFamily: 'sans-serif' }}>
