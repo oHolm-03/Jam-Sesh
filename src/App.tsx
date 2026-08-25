@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 import Auth from './Auth';
-import {supabase} from './supabaseClient';
+import { supabase } from './supabaseClient';
 import Projects from './Projects';
+import ResetPassword from './ResetPassword';
 
 const App = () => {
     const [isRecording, setIsRecording] = useState(false);
@@ -19,63 +20,98 @@ const App = () => {
     const [session, setSession] = useState<any>(null);
     const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
     const [username, setUsername] = useState<string | null>(null);
+    const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
 
+    // Load media devices on mount
     useEffect(() => {
         const loadDevices = async () => {
-            await navigator.mediaDevices.getUserMedia({audio: true});
-            const allDevices = await navigator.mediaDevices.enumerateDevices();
-            const audioInputs = allDevices.filter((d) => d.kind === 'audioinput');
-            setDevices(audioInputs);
-            if (audioInputs.length > 0){
-                setSelectedDeviceId(audioInputs[0].deviceId);
+            try {
+                await navigator.mediaDevices.getUserMedia({ audio: true });
+                const allDevices = await navigator.mediaDevices.enumerateDevices();
+                const audioInputs = allDevices.filter((d) => d.kind === 'audioinput');
+                setDevices(audioInputs);
+                if (audioInputs.length > 0) {
+                    setSelectedDeviceId(audioInputs[0].deviceId);
+                }
+            } catch (err) {
+                console.error("Error loading media devices:", err);
             }
         };
-        loadDevices();     
+        loadDevices();    
     }, []);
 
+    // DEBUG & URL CHECK: Inspect environment on load for password recovery
     useEffect(() => {
-      supabase.auth.getSession().then(({data}) => setSession(data.session));
+        console.log("--- APP LOADED ---");
+        console.log("Full URL:", window.location.href);
+        console.log("Pathname:", window.location.pathname);
+        console.log("Hash:", window.location.hash);
+        console.log("Search Query:", window.location.search);
 
-      const {data: listener} = supabase.auth.onAuthStateChange((_event, session) => {
-        setSession(session);
-      });
-      return () => listener.subscription.unsubscribe();
-    }, []);
-
-    useEffect(() => {
-      if(!session){
-        setUsername(null);
-        return;
-      }
-      const fetchProfile = async () => {
-        const {data, error} = await supabase
-          .from('profiles')
-          .select('username')
-          .eq('id', session.user.id)
-          .single();
-        
-        if(!error && data) {
-          setUsername(data.username);
+        if (
+            window.location.pathname === '/reset-password' || 
+            window.location.hash.includes('type=recovery') ||
+            window.location.hash.includes('reset-password')
+        ) {
+            console.log("Recovery trigger detected via URL/Hash!");
+            setIsPasswordRecovery(true);
         }
-      };
-      fetchProfile();
+    }, []);
+
+    // Auth state and session listeners with debug logs
+    useEffect(() => {
+        supabase.auth.getSession().then(({ data }) => {
+            console.log("Initial Session check:", data.session);
+            setSession(data.session);
+        });
+
+        const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+            console.log("Auth Event Fired:", event);
+            console.log("Session from Event:", session);
+            
+            if (event === 'PASSWORD_RECOVERY') {
+                console.log("PASSWORD_RECOVERY event caught!");
+                setIsPasswordRecovery(true);
+            }
+            setSession(session);
+        });
+        return () => listener.subscription.unsubscribe();
+    }, []);
+
+    // Fetch user profile username
+    useEffect(() => {
+        if (!session) {
+            setUsername(null);
+            return;
+        }
+        const fetchProfile = async () => {
+            const { data, error } = await supabase
+                .from('profiles')
+                .select('username')
+                .eq('id', session.user.id)
+                .single();
+            
+            if (!error && data) {
+                setUsername(data.username);
+            }
+        };
+        fetchProfile();
     }, [session]);
 
     const startMonitoring = async () => {
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {deviceId: selectedDeviceId ?  {exact: selectedDeviceId} : undefined,
+        audio: { deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
           echoCancellation: false,
           noiseSuppression: false,
           autoGainControl: false,  
       },
       });
-        if(!audioContextRef.current){
-          audioContextRef.current = new AudioContext({latencyHint: 'interactive'});
+        if (!audioContextRef.current) {
+          audioContextRef.current = new AudioContext({ latencyHint: 'interactive' });
         }
-          // wrap live audio stream so it can plug into the web audio graph
           const source = audioContextRef.current.createMediaStreamSource(stream);
 
-          if(distortionOn) {
+          if (distortionOn) {
             const distortion = audioContextRef.current.createWaveShaper();
             distortion.curve = makeDistortionCurve(400);
             distortion.oversample = '4x';
@@ -90,11 +126,9 @@ const App = () => {
           monitorSourceRef.current = source;
           setIsMonitoring(true);
         };
-    //   })
-    // }
+
     const stopMonitoring = () => {
       monitorSourceRef.current?.disconnect();
-
       monitorStreamRef.current?.getTracks().forEach((track) => track.stop());
       monitorSourceRef.current = null;
       monitorStreamRef.current = null;
@@ -103,26 +137,22 @@ const App = () => {
 
     const startRecording = async () => {
         const stream = await navigator.mediaDevices.getUserMedia({
-          audio: {deviceId: selectedDeviceId ? {exact: selectedDeviceId} : undefined},
+          audio: { deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined },
         });
         const recorder = new MediaRecorder(stream);
         chunksRef.current = [];
 
         recorder.ondataavailable = (event) => {
-            if(event.data.size > 0) {
+            if (event.data.size > 0) {
                 chunksRef.current.push(event.data);
             }
         };
 
         recorder.onstop = async () => {
-            const blob  = new Blob(chunksRef.current, {type: 'audio/webm'});
-            console.log('Blob size (bytes):', blob.size, '| Chunks collected:', chunksRef.current.length);
+            const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
             const arrayBuffer = await blob.arrayBuffer();
-            // const url = URL.createObjectURL(blob);
-            // setAudioURL(url);
-            // stream.getTracks().forEach((track) => track.stop());
-            if(!audioContextRef.current) {
-              audioContextRef.current = new AudioContext({latencyHint: 'interactive'});
+            if (!audioContextRef.current) {
+              audioContextRef.current = new AudioContext({ latencyHint: 'interactive' });
             }
 
             const decodedBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer);
@@ -137,7 +167,7 @@ const App = () => {
         setIsRecording(true);
     };
 
-        const stopRecording = () => {
+    const stopRecording = () => {
         mediaRecorderRef.current?.stop();
         setIsRecording(false);
     };
@@ -145,22 +175,20 @@ const App = () => {
     const makeDistortionCurve = (amount: number) => {
       const samples = 44100;
       const curve = new Float32Array(samples);
-      for (let i=0; i<samples; i++){
-        const x = (i*2) / samples-1; //maps i to a range from -1 to 1
-        // bends the signal instead of just chopping it off (i.e. distortion)
-        curve[i] = ((3+amount) * x * 20 * (Math.PI/180)) / (Math.PI + amount * Math.abs(x));
+      for (let i = 0; i < samples; i++) {
+        const x = (i * 2) / samples - 1; 
+        curve[i] = ((3 + amount) * x * 20 * (Math.PI / 180)) / (Math.PI + amount * Math.abs(x));
       }
       return curve;
     };
 
     const playRecording = () => {
-      if(!audioContextRef.current || !audioBufferRef.current) return;
+      if (!audioContextRef.current || !audioBufferRef.current) return;
       
       const source = audioContextRef.current.createBufferSource();
       source.buffer = audioBufferRef.current;
 
-      if(distortionOn) {
-        // build a WaveShaperNode and connect: source -> distortion -> speakers
+      if (distortionOn) {
         const distortion = audioContextRef.current.createWaveShaper();
         distortion.curve = makeDistortionCurve(400);
         distortion.oversample = '4x';
@@ -168,25 +196,40 @@ const App = () => {
         source.connect(distortion);
         distortion.connect(audioContextRef.current.destination);
       } else {
-        // bypass: source -> speakers directly
         source.connect(audioContextRef.current.destination);
       }
       source.start();
     };
 
-    if(!session){
+    // 1. Intercept render tree to show password recovery page first
+    if (isPasswordRecovery) {
+      return (
+        <ResetPassword
+          onDone={() => {
+            setIsPasswordRecovery(false);
+            window.history.replaceState({}, document.title, "/");
+            window.location.hash = '';
+          }}
+        />
+      );
+    }
+
+    // 2. Fall back to login screen if not authenticated
+    if (!session) {
       return <Auth onLogin={() => {/* session state updates via onAuthStateChange listener */}} />;
     }
 
-    if(!currentProjectId){
+    // 3. Fall back to project selector if no project is active
+    if (!currentProjectId) {
       return (
         <div>
-          {username && <p style={{padding: '20px 40px 0'}}>Welcome, {username}!</p>}
+          {username && <p style={{ padding: '20px 40px 0' }}>Welcome, {username}!</p>}
           <Projects onSelectProject={setCurrentProjectId} />
         </div>
       );
     }
 
+    // 4. Default main dashboard
     return (
     <div style={{ padding: 40, fontFamily: 'sans-serif' }}>
       <h1>Jam App — Record/Playback Prototype</h1>
@@ -231,7 +274,6 @@ const App = () => {
       )}
     </div>
   );
-
 };
 
 export default App;
