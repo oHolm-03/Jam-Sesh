@@ -232,6 +232,7 @@ const App = () => {
     // 4. Default main dashboard
     return (
     <div style={{ padding: 40, fontFamily: 'sans-serif' }}>
+      <button onClick={() => setCurrentProjectId(null)}>Return to Projects</button>
       <h1>Jam App — Record/Playback Prototype</h1>
 
       <div style={{ marginBottom: 20 }}>

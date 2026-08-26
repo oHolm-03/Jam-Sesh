@@ -11,6 +11,8 @@ const Projects = ({onSelectProject}: {onSelectProject: (id: string) => void}) =>
     const [projects, setProjects] = useState<Project[]>([]);
     const [newProjectName, setNewProjectName] = useState('');
     const [errorMsg, setErrorMsg] = useState('');
+    const [inviteUsername, setInviteUsername] = useState<Record<string, string>>({});
+    const [inviteStatus, setInviteStatus] = useState<Record<string, string>>({});
 
     const fetchProjects = async () => {
         //only returning rows where user is actually a project member
@@ -64,6 +66,34 @@ const Projects = ({onSelectProject}: {onSelectProject: (id: string) => void}) =>
         fetchProjects();
     };
 
+    const inviteToProject = async (projectId: string) => {
+        const username = inviteUsername[projectId]?.trim();
+        if(!username) return;
+
+        //Lookup invitee's user ID by username
+        const {data: profile, error: lookupError} = await supabase  
+            .from('profiles')
+            .select('id')
+            .eq('username', username)
+            .single();
+
+        if(lookupError || !profile) {
+            setInviteStatus((prev) => ({ ...prev, [projectId]: 'No user found with that username'}));
+            return;
+        }
+
+        const {error: insertError} = await supabase
+            .from('project_members')
+            .insert({project_id: projectId, user_id: profile.id});
+
+        if(insertError){
+            setInviteStatus((prev) => ({ ...prev, [projectId]: insertError.message}));
+        } else {
+            setInviteStatus((prev) => ({ ...prev, [projectId]: 'Added!'}));
+            setInviteUsername((prev) => ({ ...prev, [projectId]: ''}));
+        }
+    }
+
     return(
         <div style={{padding: 40, fontFamily: 'sans-serif'}}>
             <h2>Your Projects</h2>
@@ -88,7 +118,29 @@ const Projects = ({onSelectProject}: {onSelectProject: (id: string) => void}) =>
                     </li>
                 ))}
             </ul>
+
+            <ul>
+            {projects.map((project) => (
+                <li key={project.id} style={{ marginBottom: 15 }}>
+                {project.name}{' '}
+                <button onClick={() => onSelectProject(project.id)}>Open</button>
+                <div style={{ marginTop: 5 }}>
+                    <input
+                    type="text"
+                    placeholder="Bandmate's username"
+                    value={inviteUsername[project.id] || ''}
+                    onChange={(e) =>
+                        setInviteUsername((prev) => ({ ...prev, [project.id]: e.target.value }))
+                    }
+                    />
+                    <button onClick={() => inviteToProject(project.id)}>Invite</button>
+                    {inviteStatus[project.id] && <span style={{ marginLeft: 10 }}>{inviteStatus[project.id]}</span>}
+                </div>
+                </li>
+            ))}
+            </ul>
         </div>
+        
     );
 };
 
