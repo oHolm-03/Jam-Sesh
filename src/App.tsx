@@ -10,17 +10,28 @@ const App = () => {
     const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
     const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
     const [distortionOn, setDistortionOn] = useState(false);
-    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-    const chunksRef = useRef<Blob[]>([]);
-    const audioContextRef = useRef<AudioContext | null>(null);
-    const audioBufferRef = useRef<AudioBuffer | null>(null);
     const [isMonitoring, setIsMonitoring] = useState(false);
-    const monitorStreamRef = useRef<MediaStream | null>(null);
-    const monitorSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
     const [session, setSession] = useState<any>(null);
     const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
     const [username, setUsername] = useState<string | null>(null);
     const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
+    const [isPlaying, setIsPlaying] = useState(false);
+    const [currentTime, setCurrentTime] = useState(0);
+    const [duration, setDuration] = useState(0);
+  
+
+    const monitorStreamRef = useRef<MediaStream | null>(null);
+    const monitorSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+    const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+    const chunksRef = useRef<Blob[]>([]);
+    const audioContextRef = useRef<AudioContext | null>(null);
+    const audioBufferRef = useRef<AudioBuffer | null>(null);
+    const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
+    const playbackOffsetRef = useRef(0);
+    const playbackStartContextTimeRef = useRef(0);
+    const isManualStopRef = useRef(false);
+    const animationFrameRef = useRef<number | null>(null);
+
 
     // Load media devices on mount
     useEffect(() => {
@@ -136,35 +147,56 @@ const App = () => {
     }
 
     const startRecording = async () => {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: { deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined },
-        });
-        const recorder = new MediaRecorder(stream);
-        chunksRef.current = [];
+      const stream = await navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined },
+      });
 
-        recorder.ondataavailable = (event) => {
-            if (event.data.size > 0) {
-                chunksRef.current.push(event.data);
-            }
-        };
+      const recorder = new MediaRecorder(stream);
+      chunksRef.current = [];
 
-        recorder.onstop = async () => {
-            const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
-            const arrayBuffer = await blob.arrayBuffer();
-            if (!audioContextRef.current) {
-              audioContextRef.current = new AudioContext({ latencyHint: 'interactive' });
-            }
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          chunksRef.current.push(event.data);
+        }
+      };
 
-            const decodedBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer);
-            audioBufferRef.current = decodedBuffer;
-            setHasRecording(true);
+      recorder.onstop = async () => {
+        const blob = new Blob(chunksRef.current, { type: 'audio/webm' });
+        const arrayBuffer = await blob.arrayBuffer();
 
-            stream.getTracks().forEach((track) => track.stop());
-        };
+        if (!audioContextRef.current) {
+          audioContextRef.current = new AudioContext({ latencyHint: 'interactive' });
+        }
 
-        recorder.start();
-        mediaRecorderRef.current = recorder;
-        setIsRecording(true);
+        const decodedBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer);
+        audioBufferRef.current = decodedBuffer;
+
+        // New: set duration and fully reset playback state for this fresh recording
+        setDuration(decodedBuffer.duration);
+        playbackOffsetRef.current = 0;
+        setCurrentTime(0);
+        setIsPlaying(false);
+        if (currentSourceRef.current) {
+          try {
+            currentSourceRef.current.stop();
+          } catch {
+            /* already stopped, ignore */
+          }
+          currentSourceRef.current = null;
+        }
+        if (animationFrameRef.current) {
+          cancelAnimationFrame(animationFrameRef.current);
+          animationFrameRef.current = null;
+        }
+
+        setHasRecording(true);
+
+        stream.getTracks().forEach((track) => track.stop());
+      };
+
+      recorder.start();
+      mediaRecorderRef.current = recorder;
+      setIsRecording(true);
     };
 
     const stopRecording = () => {
@@ -182,24 +214,89 @@ const App = () => {
       return curve;
     };
 
-    const playRecording = () => {
-      if (!audioContextRef.current || !audioBufferRef.current) return;
-      
+    // Core playback function
+    const formatTime = (seconds: number) => {
+      const mins = Math.floor(seconds/60);
+      const secs = Math.floor(seconds%60);
+      return `${mins}:${secs.toString().padStart(2, '0')}`;
+    };
+
+    const updateProgress = () => {
+      if(!audioContextRef.current) return;
+      const elapsed = playbackOffsetRef.current + (audioContextRef.current.currentTime - playbackStartContextTimeRef.current);
+      setCurrentTime(Math.min(elapsed, duration));
+      animationFrameRef.current = requestAnimationFrame(updateProgress);
+    };
+
+    const startPlaybackFrom = (offset: number) => {
+      if(!audioContextRef.current || !audioBufferRef.current) return;
+
       const source = audioContextRef.current.createBufferSource();
       source.buffer = audioBufferRef.current;
 
-      if (distortionOn) {
+      if(distortionOn) {
         const distortion = audioContextRef.current.createWaveShaper();
-        distortion.curve = makeDistortionCurve(400);
-        distortion.oversample = '4x';
-
-        source.connect(distortion);
-        distortion.connect(audioContextRef.current.destination);
+          distortion.curve = makeDistortionCurve(400);
+          distortion.oversample = '4x';
+          source.connect(distortion);
+          distortion.connect(audioContextRef.current.destination);
       } else {
-        source.connect(audioContextRef.current.destination);
+          source.connect(audioContextRef.current.destination);
+        }
+        source.onended = () => {
+          if(isManualStopRef.current) {
+            isManualStopRef.current = false;
+            return;
+          }
+          setIsPlaying(false);
+          playbackOffsetRef.current = 0;
+          setCurrentTime(0);
+          if(animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+        };
+        source.start(0, offset);
+
+        currentSourceRef.current = source;
+        playbackOffsetRef.current = offset;
+        playbackStartContextTimeRef.current = audioContextRef.current.currentTime;
+        setIsPlaying(true);
+
+        animationFrameRef.current = requestAnimationFrame(updateProgress);
       }
-      source.start();
-    };
+
+      const handlePlayPause = () => {
+        if(isPlaying) {
+          isManualStopRef.current = true;
+          const elapsed = playbackOffsetRef.current + (audioContextRef.current!.currentTime - playbackStartContextTimeRef.current);
+          playbackOffsetRef.current = elapsed;
+          currentSourceRef.current?.stop();
+          setIsPlaying(false);
+          if(animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+        } else {
+          startPlaybackFrom(playbackOffsetRef.current);
+        }
+      };
+
+      const handleRestart = () => {
+        if(isPlaying){
+          isManualStopRef.current = true;
+          currentSourceRef.current?.stop();
+          if(animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+        } startPlaybackFrom(0);
+      };
+
+      const handleSkipToEnd = () => {
+        if(isPlaying){
+          isManualStopRef.current = true;
+          currentSourceRef.current?.stop();
+          if(animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+        }
+        playbackOffsetRef.current = duration;
+        setCurrentTime(duration);
+        setIsPlaying(false);
+      };
+
+      //temporary
+      const iconButtonStyle: React.CSSProperties = {};
 
     // 1. Intercept render tree to show password recovery page first
     if (isPasswordRecovery) {
@@ -231,50 +328,94 @@ const App = () => {
 
     // 4. Default main dashboard
     return (
-    <div style={{ padding: 40, fontFamily: 'sans-serif' }}>
-      <button onClick={() => setCurrentProjectId(null)}>Return to Projects</button>
-      <h1>Jam App — Record/Playback Prototype</h1>
+  <div style={{ padding: 40, fontFamily: 'sans-serif' }}>
+    <button onClick={() => setCurrentProjectId(null)}>← Back to Projects</button>
+    <h1>Jam App — Record/Playback Prototype</h1>
 
-      <div style={{ marginBottom: 20 }}>
-        <label>Input device: </label>
-        <select value={selectedDeviceId} onChange={(e) => setSelectedDeviceId(e.target.value)}>
-          {devices.map((device) => (
-            <option key={device.deviceId} value={device.deviceId}>
-              {device.label || `Microphone ${device.deviceId.slice(0, 5)}`}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div style={{ marginBottom: 20 }}>
-        {!isMonitoring ? (
-          <button onClick={startMonitoring}>Start Monitoring</button>
-        ) : (
-          <button onClick={stopMonitoring}>Stop Monitoring</button>
-        )}
-        <label style={{ marginLeft: 10 }}>
-          <input
-            type="checkbox"
-            checked={distortionOn}
-            onChange={(e) => setDistortionOn(e.target.checked)}
-          />
-          Distortion
-        </label>
-      </div>
-
-      {!isRecording ? (
-        <button onClick={startRecording}>Start Recording</button>
-      ) : (
-        <button onClick={stopRecording}>Stop Recording</button>
-      )}
-
-      {hasRecording && (
-        <div style={{ marginTop: 20 }}>
-          <button onClick={playRecording}>Play Recording</button>
-        </div>
-      )}
+    <div style={{ marginBottom: 20 }}>
+      <label>Input device: </label>
+      <select value={selectedDeviceId} onChange={(e) => setSelectedDeviceId(e.target.value)}>
+        {devices.map((device) => (
+          <option key={device.deviceId} value={device.deviceId}>
+            {device.label || `Microphone ${device.deviceId.slice(0, 5)}`}
+          </option>
+        ))}
+      </select>
     </div>
-  );
-};
+
+    <div style={{ marginBottom: 20 }}>
+      {!isMonitoring ? (
+        <button onClick={startMonitoring}>Start Monitoring</button>
+      ) : (
+        <button onClick={stopMonitoring}>Stop Monitoring</button>
+      )}
+      <label style={{ marginLeft: 10 }}>
+        <input
+          type="checkbox"
+          checked={distortionOn}
+          onChange={(e) => setDistortionOn(e.target.checked)}
+        />
+        Distortion
+      </label>
+    </div>
+
+    {!isRecording ? (
+      <button onClick={startRecording}>Start Recording</button>
+    ) : (
+      <button onClick={stopRecording}>Stop Recording</button>
+    )}
+
+    {hasRecording && (
+      <div style={{ marginTop: 20, maxWidth: 400 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
+          <button onClick={handleRestart} style={iconButtonStyle} aria-label="Restart">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
+            </svg>
+          </button>
+
+          <button onClick={handlePlayPause} style={iconButtonStyle} aria-label={isPlaying ? 'Pause' : 'Play'}>
+            {isPlaying ? (
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                <rect x="6" y="5" width="4" height="14" />
+                <rect x="14" y="5" width="4" height="14" />
+              </svg>
+            ) : (
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                <polygon points="6,4 20,12 6,20" />
+              </svg>
+            )}
+          </button>
+
+          <button onClick={handleSkipToEnd} style={iconButtonStyle} aria-label="Skip to end">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <polygon points="5,4 15,12 5,20" />
+              <rect x="17" y="4" width="3" height="16" />
+            </svg>
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 12, minWidth: 36 }}>{formatTime(currentTime)}</span>
+          <div style={{ flex: 1, height: 6, background: '#ddd', borderRadius: 3, position: 'relative' }}>
+            <div
+              style={{
+                position: 'absolute',
+                left: 0,
+                top: 0,
+                height: '100%',
+                width: `${duration ? (currentTime / duration) * 100 : 0}%`,
+                background: '#333',
+                borderRadius: 3,
+              }}
+            />
+          </div>
+          <span style={{ fontSize: 12, minWidth: 36 }}>{formatTime(duration)}</span>
+        </div>
+      </div>
+    )}
+  </div>
+);
+}
 
 export default App;

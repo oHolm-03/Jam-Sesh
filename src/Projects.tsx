@@ -129,20 +129,10 @@ const Projects = ({onSelectProject}: {onSelectProject: (id: string) => void}) =>
 
             {errorMsg && <p style={{color: 'red'}}>{errorMsg}</p>}
 
-            <ul>
-                {projects.map((project) => (
-                    <li key={project.id}>
-                        {project.name}{' '}
-                        <button onClick={() => onSelectProject(project.id)}>Open</button>
-                    </li>
-                ))}
-            </ul>
-
-            <ul>
+            <ol>
             {projects.map((project) => (
                 <li key={project.id} style={{ marginBottom: 15 }}>
-                {project.name}{' '}
-                <button onClick={() => onSelectProject(project.id)}>Open</button>
+                <button onClick={() => onSelectProject(project.id)}>{project.name}</button>
                 {project.created_by === currentUserId && (
                     <button onClick={() => deleteProject(project.id, project.name)} style={{marginLeft: 5}}> Delete </button>
                 )}
@@ -160,7 +150,7 @@ const Projects = ({onSelectProject}: {onSelectProject: (id: string) => void}) =>
                 </div>
                 </li>
             ))}
-            </ul>
+            </ol>
         </div>
         
     );
