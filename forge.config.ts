@@ -27,6 +27,9 @@ const config: ForgeConfig = {
     new WebpackPlugin({
       mainConfig,
       devContentSecurityPolicy: "default-src 'self' 'unsafe-inline' data:; script-src 'self' 'unsafe-eval' 'unsafe-inline' data:; media-src 'self' blob:; connect-src 'self' https://*.supabase.co wss://*.supabase.co",
+      devServer: {
+        historyApiFallback: true,
+      },
       renderer: {
         config: rendererConfig,
         entryPoints: [
