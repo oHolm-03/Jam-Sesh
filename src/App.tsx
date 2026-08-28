@@ -18,7 +18,7 @@ const App = () => {
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [duration, setDuration] = useState(0);
-  
+    const [currentTrackId, setCurrentTrackId] = useState<string | null>(null);
 
     const monitorStreamRef = useRef<MediaStream | null>(null);
     const monitorSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
@@ -109,6 +109,73 @@ const App = () => {
         fetchProfile();
     }, [session]);
 
+    useEffect(() => {
+      if(!currentProjectId) return;
+
+      const setupProject = async () => {
+        audioBufferRef.current = null;
+        setHasRecording(false);
+        setDuration(0);
+        setCurrentTime(0);
+        playbackOffsetRef.current = 0;
+        if(currentSourceRef.current) {
+          try {currentSourceRef.current.stop();} catch {/* already stopped */}
+          currentSourceRef.current = null;
+        }
+        if(animationFrameRef.current){
+          cancelAnimationFrame(animationFrameRef.current);
+          animationFrameRef.current = null;
+        }
+
+        const trackId = await ensureDefaultTrack(currentProjectId);
+        setCurrentTrackId(trackId);
+        if(!trackId) return;
+
+        const {data:clips} = await supabase
+          .from('clips')
+          .select('storage_path')
+          .eq('track_id', trackId)
+          .order('created_at', {ascending: false})
+          .limit(1);
+        if(clips && clips.length > 0) {
+          const {data: fileData, error: downloadError} = await supabase.storage
+            .from('audio-clips')
+            .download(clips[0].storage_path);
+          if(downloadError || !fileData) return;
+
+          const arrayBuffer = await fileData.arrayBuffer();
+          if(!audioContextRef.current) {
+            audioContextRef.current = new AudioContext({latencyHint: 'interactive'});
+          }
+          const decodedBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer);
+          audioBufferRef.current = decodedBuffer;
+          setDuration(decodedBuffer.duration);
+          setHasRecording(true);
+        }
+      };
+      setupProject(); }, [currentProjectId]);
+
+    const ensureDefaultTrack = async (projectId: string) => {
+      const {data: existingTracks} = await supabase
+        .from('tracks')
+        .select('id')
+        .eq('project_id', projectId)
+        .limit(1);
+      if(existingTracks && existingTracks.length > 0){
+        return existingTracks[0].id;
+      }
+      const {data: newTrack, error} = await supabase
+        .from('tracks')
+        .insert({project_id: projectId, name: 'Main'})
+        .select()
+        .single();
+      if(error || !newTrack) {
+        console.error('Failed to create default track:', error);
+        return null;
+      }
+      return newTrack.id;
+    };
+
     const startMonitoring = async () => {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
@@ -190,8 +257,27 @@ const App = () => {
         }
 
         setHasRecording(true);
-
         stream.getTracks().forEach((track) => track.stop());
+
+        if(currentTrackId){
+          const {data: userData} = await supabase.auth.getUser();
+          const userId = userData.user?.id;
+          const fileName = `${currentTrackId}/${Date.now()}.webm`;
+          const {error: uploadError} = await supabase.storage
+            .from('audio-clips')
+            .upload(fileName, blob);
+          
+          if(uploadError){
+            console.error('Upload failed: ', uploadError);
+            return;
+          }
+          await supabase.from('clips').insert({
+            track_id: currentTrackId,
+            uploaded_by: userId,
+            storage_path: fileName,
+            file_size_bytes: blob.size,
+          });
+        }
       };
 
       recorder.start();
