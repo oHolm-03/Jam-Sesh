@@ -9,37 +9,82 @@ type DistortionNodeSet = {
     toneFilter: BiquadFilterNode;
     levelGain: GainNode;
 };
+
+type TrackData = {
+    id: string;
+    name: string;
+    hasRecording: boolean;
+    duration: number;
+    currentTime: number;
+    isPlaying: boolean;
+};
+
+type TrackAudioRefs = {
+    audioBuffer: AudioBuffer | null;
+    duration: number;
+    currentSource: AudioBufferSourceNode | null;
+    playbackOffset: number;
+    playbackStartContextTime: number;
+    isManualStop: boolean;
+    animationFrame: number | null;
+};
  
 const App = () => {
     const [isRecording, setIsRecording] = useState(false);
-    const [hasRecording, setHasRecording] = useState(false);
+    // const [hasRecording, setHasRecording] = useState(false);
     const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
     const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
     const [distortionOn, setDistortionOn] = useState(false);
     const [distortionParams, setDistortionParams] = useState({ drive: 50, tone: 8000, level: 1 });
+    
     const [isMonitoring, setIsMonitoring] = useState(false);
     const [session, setSession] = useState<any>(null);
     const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
     const [username, setUsername] = useState<string | null>(null);
     const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [currentTime, setCurrentTime] = useState(0);
-    const [duration, setDuration] = useState(0);
-    const [currentTrackId, setCurrentTrackId] = useState<string | null>(null);
+    // const [isPlaying, setIsPlaying] = useState(false);
+    // const [currentTime, setCurrentTime] = useState(0);
+    // const [duration, setDuration] = useState(0);
+    // const [currentTrackId, setCurrentTrackId] = useState<string | null>(null);
+    const [tracks, setTracks] = useState<TrackData[]>([]);
+    const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
  
     const monitorStreamRef = useRef<MediaStream | null>(null);
     const monitorSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const chunksRef = useRef<Blob[]>([]);
     const audioContextRef = useRef<AudioContext | null>(null);
-    const audioBufferRef = useRef<AudioBuffer | null>(null);
-    const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
-    const playbackOffsetRef = useRef(0);
-    const playbackStartContextTimeRef = useRef(0);
-    const isManualStopRef = useRef(false);
-    const animationFrameRef = useRef<number | null>(null);
+    // const audioBufferRef = useRef<AudioBuffer | null>(null);
+    // const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
+    // const playbackOffsetRef = useRef(0);
+    // const playbackStartContextTimeRef = useRef(0);
+    // const isManualStopRef = useRef(false);
+    // const animationFrameRef = useRef<number | null>(null);
     const activeDistortionNodesRef = useRef<DistortionNodeSet[]>([]);
     const monitorCleanupRef = useRef<() => void>(() => {/* noop until monitoring starts */});
+    const trackAudioRefsRef = useRef<Map<string, TrackAudioRefs>>(new Map());
+
+    //helpers
+    const getTrackAudioRefs = (trackId: string): TrackAudioRefs => {
+        let refs = trackAudioRefsRef.current.get(trackId);
+        if(!refs){
+            refs = {
+                audioBuffer: null,
+                duration: 0,
+                currentSource: null,
+                playbackOffset: 0,
+                playbackStartContextTime: 0,
+                isManualStop: false,
+                animationFrame: null,
+            };
+            trackAudioRefsRef.current.set(trackId, refs);
+        }
+        return refs;
+    };
+
+    const updateTrackState = (trackId: string, patch: Partial<TrackData>) => {
+        setTracks((prev) => prev.map((t) => (t.id === trackId ? { ...t, ...patch} : t)));
+    }
  
     // Load media devices on mount
     useEffect(() => {
@@ -127,71 +172,83 @@ const App = () => {
     }, [session]);
  
     useEffect(() => {
-        if (!currentProjectId) return;
- 
-        const setupProject = async () => {
-            audioBufferRef.current = null;
-            setHasRecording(false);
-            setDuration(0);
-            setCurrentTime(0);
-            playbackOffsetRef.current = 0;
-            if (currentSourceRef.current) {
-                try { currentSourceRef.current.stop(); } catch {/* already stopped */}
-                currentSourceRef.current = null;
+        if(!currentProjectId) return;
+
+        const loadTracks = async () => {
+            setTracks([]);
+            setSelectedTrackId(null);
+            trackAudioRefsRef.current.clear();
+
+            const {data: trackRows, error} = await supabase
+                .from('tracks')
+                .select('id, name')
+                .eq('project_id', currentProjectId)
+                .order('created_at', {ascending: true});
+            if(error || !trackRows) return;
+
+            if(!audioContextRef.current) {
+                audioContextRef.current = new AudioContext({latencyHint: 'interactive'});
             }
-            if (animationFrameRef.current) {
-                cancelAnimationFrame(animationFrameRef.current);
-                animationFrameRef.current = null;
-            }
- 
-            const trackId = await ensureDefaultTrack(currentProjectId);
-            setCurrentTrackId(trackId);
-            if (!trackId) return;
- 
-            const { data: clips } = await supabase
-                .from('clips')
-                .select('storage_path')
-                .eq('track_id', trackId)
-                .order('created_at', { ascending: false })
-                .limit(1);
-            if (clips && clips.length > 0) {
-                const { data: fileData, error: downloadError } = await supabase.storage
-                    .from('audio-clips')
-                    .download(clips[0].storage_path);
-                if (downloadError || !fileData) return;
- 
-                const arrayBuffer = await fileData.arrayBuffer();
-                if (!audioContextRef.current) {
-                    audioContextRef.current = new AudioContext({ latencyHint: 'interactive' });
+            
+            const loadedTracks: TrackData[] = [];
+
+            for (const row of trackRows) {
+                const refs = getTrackAudioRefs(row.id);
+                let hasRecording = false;
+                let duration = 0;
+
+                const {data: clips} = await supabase
+                    .from('clips')
+                    .select('storage_path')
+                    .eq('track_id', row.id)
+                    .order('created_at', {ascending: false})
+                    .limit(1);
+
+                if(clips && clips.length > 0){
+                    const {data: fileData, error: downloadError} = await supabase.storage
+                        .from('audio-clips')
+                        .download(clips[0].storage_path);
+
+                    if(!downloadError && fileData) {
+                        const arrayBuffer = await fileData.arrayBuffer();
+                        const decodedBuffer = await audioContextRef.current!.decodeAudioData(arrayBuffer);
+                        refs.audioBuffer = decodedBuffer;
+                        refs.duration = decodedBuffer.duration;
+                        hasRecording = true;
+                        duration = decodedBuffer.duration;
+                    }
                 }
-                const decodedBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer);
-                audioBufferRef.current = decodedBuffer;
-                setDuration(decodedBuffer.duration);
-                setHasRecording(true);
+                loadedTracks.push({
+                    id: row.id,
+                    name: row.name,
+                    hasRecording,
+                    duration,
+                    currentTime: 0,
+                    isPlaying: false,
+                });
             }
+            setTracks(loadedTracks);
         };
-        setupProject();
+        loadTracks();
     }, [currentProjectId]);
- 
-    const ensureDefaultTrack = async (projectId: string) => {
-        const { data: existingTracks } = await supabase
+
+    const handleAddTrack = async () => {
+        if(!currentProjectId) return;
+        const {data: newTrack, error} = await supabase
             .from('tracks')
-            .select('id')
-            .eq('project_id', projectId)
-            .limit(1);
-        if (existingTracks && existingTracks.length > 0) {
-            return existingTracks[0].id;
-        }
-        const { data: newTrack, error } = await supabase
-            .from('tracks')
-            .insert({ project_id: projectId, name: 'Main' })
+            .insert({project_id: currentProjectId, name: `Track ${tracks.length+1}`})
             .select()
             .single();
-        if (error || !newTrack) {
-            console.error('Failed to create default track:', error);
-            return null;
+
+        if(error || !newTrack){
+            console.error('Failed to create track:', error);
+            return;
         }
-        return newTrack.id;
+        getTrackAudioRefs(newTrack.id);
+        setTracks((prev) => [
+            ...prev, {id: newTrack.id, name: newTrack.name, hasRecording: false, duration: 0, currentTime: 0, isPlaying: false},  
+        ]);
+        setSelectedTrackId(newTrack.id);
     };
  
     // Builds (or bypasses) the distortion chain between a source and a destination.
@@ -268,6 +325,8 @@ const App = () => {
     };
  
     const startRecording = async () => {
+        if(!selectedTrackId) return;
+        const trackId = selectedTrackId;
         const stream = await navigator.mediaDevices.getUserMedia({
             audio: { deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined },
         });
@@ -290,32 +349,34 @@ const App = () => {
             }
  
             const decodedBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer);
-            audioBufferRef.current = decodedBuffer;
- 
-            setDuration(decodedBuffer.duration);
-            playbackOffsetRef.current = 0;
-            setCurrentTime(0);
-            setIsPlaying(false);
-            if (currentSourceRef.current) {
-                try {
-                    currentSourceRef.current.stop();
-                } catch {
-                    /* already stopped, ignore */
-                }
-                currentSourceRef.current = null;
+            // audioBufferRef.current = decodedBuffer;
+            const refs = getTrackAudioRefs(trackId);
+            refs.audioBuffer = decodedBuffer;
+            refs.duration = decodedBuffer.duration;
+
+            refs.playbackOffset = 0;
+            if(refs.currentSource){
+                try {refs.currentSource.stop(); } catch{/*already stopped, ignore*/} 
+                refs.currentSource = null;
             }
-            if (animationFrameRef.current) {
-                cancelAnimationFrame(animationFrameRef.current);
-                animationFrameRef.current = null;
+            if(refs.animationFrame){
+                cancelAnimationFrame(refs.animationFrame);
+                refs.animationFrame = null;
             }
- 
-            setHasRecording(true);
+            
+            updateTrackState(trackId, {
+                hasRecording: true,
+                duration: decodedBuffer.duration,
+                currentTime: 0, 
+                isPlaying: false,
+            });
+
             stream.getTracks().forEach((track) => track.stop());
  
-            if (currentTrackId) {
+            if (trackId) {
                 const { data: userData } = await supabase.auth.getUser();
                 const userId = userData.user?.id;
-                const fileName = `${currentTrackId}/${Date.now()}.webm`;
+                const fileName = `${trackId}/${Date.now()}.webm`;
                 const { error: uploadError } = await supabase.storage
                     .from('audio-clips')
                     .upload(fileName, blob);
@@ -325,7 +386,7 @@ const App = () => {
                     return;
                 }
                 await supabase.from('clips').insert({
-                    track_id: currentTrackId,
+                    track_id: trackId,
                     uploaded_by: userId,
                     storage_path: fileName,
                     file_size_bytes: blob.size,
@@ -360,77 +421,80 @@ const App = () => {
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
  
-    const updateProgress = () => {
+    const updateProgress = (trackId: string) => {
+        const refs = getTrackAudioRefs(trackId);
         if (!audioContextRef.current) return;
-        const elapsed = playbackOffsetRef.current + (audioContextRef.current.currentTime - playbackStartContextTimeRef.current);
-        setCurrentTime(Math.min(elapsed, duration));
-        animationFrameRef.current = requestAnimationFrame(updateProgress);
+        const elapsed = refs.playbackOffset + (audioContextRef.current.currentTime - refs.playbackStartContextTime);
+        const clamped = Math.min(elapsed, refs.duration);
+        updateTrackState(trackId, { currentTime: clamped });
+        refs.animationFrame = requestAnimationFrame(() => updateProgress(trackId));
     };
  
-    const startPlaybackFrom = (offset: number) => {
-        if (!audioContextRef.current || !audioBufferRef.current) return;
- 
+    const startPlaybackFrom = (trackId: string, offset: number) => {
+        const refs = getTrackAudioRefs(trackId);
+        if(!audioContextRef.current || !refs.audioBuffer) return;
+
         const source = audioContextRef.current.createBufferSource();
-        source.buffer = audioBufferRef.current;
- 
+        source.buffer = refs.audioBuffer;
+
         const cleanup = connectEffectsChain(
-            audioContextRef.current,
-            source,
-            audioContextRef.current.destination
-        );
- 
+            audioContextRef.current, source, audioContextRef.current.destination);
+        
         source.onended = () => {
             cleanup();
-            if (isManualStopRef.current) {
-                isManualStopRef.current = false;
+            if(refs.isManualStop) {
+                refs.isManualStop = false;
                 return;
             }
-            setIsPlaying(false);
-            playbackOffsetRef.current = 0;
-            setCurrentTime(0);
-            if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+            updateTrackState(trackId, {isPlaying: false, currentTime:0});
+            refs.playbackOffset = 0;
+            if(refs.animationFrame) cancelAnimationFrame(refs.animationFrame);
         };
         source.start(0, offset);
- 
-        currentSourceRef.current = source;
-        playbackOffsetRef.current = offset;
-        playbackStartContextTimeRef.current = audioContextRef.current.currentTime;
-        setIsPlaying(true);
- 
-        animationFrameRef.current = requestAnimationFrame(updateProgress);
+
+        refs.currentSource = source;
+        refs.playbackOffset = offset;
+        refs.playbackStartContextTime = audioContextRef.current.currentTime;
+        updateTrackState(trackId, {isPlaying: true});
+        refs.animationFrame = requestAnimationFrame(() => updateProgress(trackId));   
     };
  
-    const handlePlayPause = () => {
-        if (isPlaying) {
-            isManualStopRef.current = true;
-            const elapsed = playbackOffsetRef.current + (audioContextRef.current!.currentTime - playbackStartContextTimeRef.current);
-            playbackOffsetRef.current = elapsed;
-            currentSourceRef.current?.stop();
-            setIsPlaying(false);
-            if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+    const handlePlayPause = (trackId: string) => {
+        const refs = getTrackAudioRefs(trackId);
+        const track = tracks.find((t) => t.id === trackId);
+        if(track?.isPlaying){
+            refs.isManualStop = true;
+            const elapsed = refs.playbackOffset + (audioContextRef.current!.currentTime - refs.playbackStartContextTime);
+            refs.playbackOffset = elapsed;
+            refs.currentSource?.stop();
+            updateTrackState(trackId, {isPlaying: false});
+            if(refs.animationFrame) cancelAnimationFrame(refs.animationFrame);
         } else {
-            startPlaybackFrom(playbackOffsetRef.current);
+            startPlaybackFrom(trackId, refs.playbackOffset);
         }
     };
  
-    const handleRestart = () => {
-        if (isPlaying) {
-            isManualStopRef.current = true;
-            currentSourceRef.current?.stop();
-            if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+    const handleRestart = (trackId: string) => {
+        const refs = getTrackAudioRefs(trackId);
+        const track = tracks.find((t) => t.id === trackId);
+        if(track?.isPlaying){
+            refs.isManualStop = true;
+            refs.currentSource?.stop();
+            if(refs.animationFrame) cancelAnimationFrame(refs.animationFrame);
         }
-        startPlaybackFrom(0);
+        startPlaybackFrom(trackId, 0);
     };
  
-    const handleSkipToEnd = () => {
-        if (isPlaying) {
-            isManualStopRef.current = true;
-            currentSourceRef.current?.stop();
-            if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+    const handleSkipToEnd = (trackId: string) => {
+        const refs = getTrackAudioRefs(trackId);
+        const track = tracks.find((t) => t.id === trackId);
+        if(track?.isPlaying){
+            refs.isManualStop = true;
+            refs.currentSource?.stop();
+            if(refs.animationFrame) cancelAnimationFrame(refs.animationFrame);
         }
-        playbackOffsetRef.current = duration;
-        setCurrentTime(duration);
-        setIsPlaying(false);
+        refs.playbackOffset = refs.duration;
+        updateTrackState(trackId, {currentTime: refs.duration, isPlaying: false});
     };
  
     //temporary
@@ -533,61 +597,105 @@ const App = () => {
                 )}
             </div>
  
-            {!isRecording ? (
-                <button onClick={startRecording}>Start Recording</button>
-            ) : (
-                <button onClick={stopRecording}>Stop Recording</button>
-            )}
+            <div style={{marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10}}>
+                {!isRecording ? (
+                    <button onClick={startRecording} disabled={!selectedTrackId}>Start Recording</button>
+                ): (
+                    <button onClick={stopRecording}>Stop Recording</button>
+                )}
+                {!selectedTrackId && (
+                    <span style={{fontSize: 13, color: '#888'}}>Select a track below to record onto it</span>
+                )}
+            </div>
  
-            {hasRecording && (
-                <div style={{ marginTop: 20, maxWidth: 400 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
-                        <button onClick={handleRestart} style={iconButtonStyle} aria-label="Restart">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                                <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
-                            </svg>
-                        </button>
- 
-                        <button onClick={handlePlayPause} style={iconButtonStyle} aria-label={isPlaying ? 'Pause' : 'Play'}>
-                            {isPlaying ? (
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                                    <rect x="6" y="5" width="4" height="14" />
-                                    <rect x="14" y="5" width="4" height="14" />
-                                </svg>
-                            ) : (
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                                    <polygon points="6,4 20,12 6,20" />
-                                </svg>
-                            )}
-                        </button>
- 
-                        <button onClick={handleSkipToEnd} style={iconButtonStyle} aria-label="Skip to end">
-                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                                <polygon points="5,4 15,12 5,20" />
-                                <rect x="17" y="4" width="3" height="16" />
-                            </svg>
-                        </button>
-                    </div>
- 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                        <span style={{ fontSize: 12, minWidth: 36 }}>{formatTime(currentTime)}</span>
-                        <div style={{ flex: 1, height: 6, background: '#ddd', borderRadius: 3, position: 'relative' }}>
-                            <div
-                                style={{
-                                    position: 'absolute',
-                                    left: 0,
-                                    top: 0,
-                                    height: '100%',
-                                    width: `${duration ? (currentTime / duration) * 100 : 0}%`,
-                                    background: '#333',
-                                    borderRadius: 3,
-                                }}
-                            />
-                        </div>
-                        <span style={{ fontSize: 12, minWidth: 36 }}>{formatTime(duration)}</span>
-                    </div>
+            <div style={{ marginTop: 20, maxWidth: 500 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+                    <h3 style={{ margin: 0 }}>Tracks</h3>
+                    <button onClick={handleAddTrack}>+ Add Track</button>
                 </div>
-            )}
+ 
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                    {tracks.map((track) => (
+                        <div
+                            key={track.id}
+                            onClick={() => setSelectedTrackId(track.id)}
+                            style={{
+                                border: track.id === selectedTrackId ? '2px solid #333' : '1px solid #ccc',
+                                borderRadius: 6,
+                                padding: 16,
+                                cursor: 'pointer',
+                                background: track.id === selectedTrackId ? '#f5f5f5' : '#fff',
+                            }}
+                        >
+                            <div style={{ fontWeight: 'bold', marginBottom: 8 }}>{track.name}</div>
+ 
+                            {track.hasRecording ? (
+                                <>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); handleRestart(track.id); }}
+                                            style={iconButtonStyle}
+                                            aria-label="Restart"
+                                        >
+                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                                <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
+                                            </svg>
+                                        </button>
+ 
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); handlePlayPause(track.id); }}
+                                            style={iconButtonStyle}
+                                            aria-label={track.isPlaying ? 'Pause' : 'Play'}
+                                        >
+                                            {track.isPlaying ? (
+                                                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                                                    <rect x="6" y="5" width="4" height="14" />
+                                                    <rect x="14" y="5" width="4" height="14" />
+                                                </svg>
+                                            ) : (
+                                                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                                                    <polygon points="6,4 20,12 6,20" />
+                                                </svg>
+                                            )}
+                                        </button>
+ 
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); handleSkipToEnd(track.id); }}
+                                            style={iconButtonStyle}
+                                            aria-label="Skip to end"
+                                        >
+                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                                                <polygon points="5,4 15,12 5,20" />
+                                                <rect x="17" y="4" width="3" height="16" />
+                                            </svg>
+                                        </button>
+                                    </div>
+ 
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                        <span style={{ fontSize: 12, minWidth: 36 }}>{formatTime(track.currentTime)}</span>
+                                        <div style={{ flex: 1, height: 6, background: '#ddd', borderRadius: 3, position: 'relative' }}>
+                                            <div
+                                                style={{
+                                                    position: 'absolute',
+                                                    left: 0,
+                                                    top: 0,
+                                                    height: '100%',
+                                                    width: `${track.duration ? (track.currentTime / track.duration) * 100 : 0}%`,
+                                                    background: '#333',
+                                                    borderRadius: 3,
+                                                }}
+                                            />
+                                        </div>
+                                        <span style={{ fontSize: 12, minWidth: 36 }}>{formatTime(track.duration)}</span>
+                                    </div>
+                                </>
+                            ) : (
+                                <div style={{ fontSize: 13, color: '#888' }}>No recording yet</div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            </div>
         </div>
     );
 };
