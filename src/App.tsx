@@ -3,6 +3,7 @@ import Auth from './Auth';
 import { supabase } from './supabaseClient';
 import Projects from './Projects';
 import ResetPassword from './ResetPassword';
+import InlineRename from './InlineRename';
  
 type DistortionNodeSet = {
     waveshaper: WaveShaperNode;
@@ -31,7 +32,6 @@ type TrackAudioRefs = {
  
 const App = () => {
     const [isRecording, setIsRecording] = useState(false);
-    // const [hasRecording, setHasRecording] = useState(false);
     const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
     const [selectedDeviceId, setSelectedDeviceId] = useState<string>('');
     const [distortionOn, setDistortionOn] = useState(false);
@@ -42,10 +42,6 @@ const App = () => {
     const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
     const [username, setUsername] = useState<string | null>(null);
     const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
-    // const [isPlaying, setIsPlaying] = useState(false);
-    // const [currentTime, setCurrentTime] = useState(0);
-    // const [duration, setDuration] = useState(0);
-    // const [currentTrackId, setCurrentTrackId] = useState<string | null>(null);
     const [tracks, setTracks] = useState<TrackData[]>([]);
     const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
  
@@ -54,12 +50,6 @@ const App = () => {
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const chunksRef = useRef<Blob[]>([]);
     const audioContextRef = useRef<AudioContext | null>(null);
-    // const audioBufferRef = useRef<AudioBuffer | null>(null);
-    // const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
-    // const playbackOffsetRef = useRef(0);
-    // const playbackStartContextTimeRef = useRef(0);
-    // const isManualStopRef = useRef(false);
-    // const animationFrameRef = useRef<number | null>(null);
     const activeDistortionNodesRef = useRef<DistortionNodeSet[]>([]);
     const monitorCleanupRef = useRef<() => void>(() => {/* noop until monitoring starts */});
     const trackAudioRefsRef = useRef<Map<string, TrackAudioRefs>>(new Map());
@@ -349,7 +339,6 @@ const App = () => {
             }
  
             const decodedBuffer = await audioContextRef.current.decodeAudioData(arrayBuffer);
-            // audioBufferRef.current = decodedBuffer;
             const refs = getTrackAudioRefs(trackId);
             refs.audioBuffer = decodedBuffer;
             refs.duration = decodedBuffer.duration;
@@ -627,7 +616,18 @@ const App = () => {
                                 background: track.id === selectedTrackId ? '#f5f5f5' : '#fff',
                             }}
                         >
-                            <div style={{ fontWeight: 'bold', marginBottom: 8 }}>{track.name}</div>
+                            <InlineRename
+                                value={track.name}
+                                label="Rename track"
+                                onSave={async (newName) => {
+                                    const { error } = await supabase.from('tracks').update({ name: newName }).eq('id', track.id);
+                                    if (error) {
+                                        console.error('Failed to rename track:', error);
+                                        return;
+                                    }
+                                    updateTrackState(track.id, { name: newName });
+                                }}
+                            />
  
                             {track.hasRecording ? (
                                 <>
