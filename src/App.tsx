@@ -16,19 +16,22 @@ type TrackData = {
     name: string;
     hasRecording: boolean;
     duration: number;
-    currentTime: number;
-    isPlaying: boolean;
+    muted: boolean;
 };
 
 type TrackAudioRefs = {
     audioBuffer: AudioBuffer | null;
     duration: number;
-    currentSource: AudioBufferSourceNode | null;
+    muteGainNode: GainNode | null;
+};
+
+type MasterPlaybackState = {
+    activeSources: AudioBufferSourceNode[];
     playbackOffset: number;
     playbackStartContextTime: number;
     isManualStop: boolean;
     animationFrame: number | null;
-};
+}
  
 const App = () => {
     const [isRecording, setIsRecording] = useState(false);
@@ -44,6 +47,8 @@ const App = () => {
     const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
     const [tracks, setTracks] = useState<TrackData[]>([]);
     const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
+    const [masterIsPlaying, setMasterIsPlaying] = useState(false);
+    const [masterCurrentTime, setMasterCurrentTime] = useState(0);
  
     const monitorStreamRef = useRef<MediaStream | null>(null);
     const monitorSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
@@ -53,6 +58,13 @@ const App = () => {
     const activeDistortionNodesRef = useRef<DistortionNodeSet[]>([]);
     const monitorCleanupRef = useRef<() => void>(() => {/* noop until monitoring starts */});
     const trackAudioRefsRef = useRef<Map<string, TrackAudioRefs>>(new Map());
+    const masterPlaybackRef = useRef<MasterPlaybackState>({
+        activeSources: [],
+        playbackOffset: 0,
+        playbackStartContextTime: 0,
+        isManualStop: false,
+        animationFrame: null,
+    });
 
     //helpers
     const getTrackAudioRefs = (trackId: string): TrackAudioRefs => {
@@ -61,11 +73,7 @@ const App = () => {
             refs = {
                 audioBuffer: null,
                 duration: 0,
-                currentSource: null,
-                playbackOffset: 0,
-                playbackStartContextTime: 0,
-                isManualStop: false,
-                animationFrame: null,
+                muteGainNode: null
             };
             trackAudioRefsRef.current.set(trackId, refs);
         }
@@ -75,6 +83,8 @@ const App = () => {
     const updateTrackState = (trackId: string, patch: Partial<TrackData>) => {
         setTracks((prev) => prev.map((t) => (t.id === trackId ? { ...t, ...patch} : t)));
     }
+
+    const getMasterDuration = () => Math.max(0, ...tracks.map((t) => t.duration));
  
     // Load media devices on mount
     useEffect(() => {
@@ -102,6 +112,16 @@ const App = () => {
             levelGain.gain.value = distortionParams.level;
         });
     }, [distortionParams]);
+
+    // push live mute changes onto whatever mute gain nodes are currently active
+    useEffect(() => {
+        tracks.forEach((track) => {
+            const refs = trackAudioRefsRef.current.get(track.id);
+            if(refs?.muteGainNode) {
+                refs.muteGainNode.gain.value = track.muted ? 0:1;
+            }
+        });
+    }, [tracks]);
  
     // DEBUG & URL CHECK: Inspect environment on load for password recovery
     useEffect(() => {
@@ -161,12 +181,15 @@ const App = () => {
         fetchProfile();
     }, [session]);
  
+    // load every track for the current project, and each track's latest clip
     useEffect(() => {
         if(!currentProjectId) return;
 
         const loadTracks = async () => {
             setTracks([]);
             setSelectedTrackId(null);
+            setMasterIsPlaying(false);
+            setMasterCurrentTime(0);
             trackAudioRefsRef.current.clear();
 
             const {data: trackRows, error} = await supabase
@@ -174,6 +197,7 @@ const App = () => {
                 .select('id, name')
                 .eq('project_id', currentProjectId)
                 .order('created_at', {ascending: true});
+            
             if(error || !trackRows) return;
 
             if(!audioContextRef.current) {
@@ -213,8 +237,7 @@ const App = () => {
                     name: row.name,
                     hasRecording,
                     duration,
-                    currentTime: 0,
-                    isPlaying: false,
+                    muted: false,
                 });
             }
             setTracks(loadedTracks);
@@ -236,9 +259,14 @@ const App = () => {
         }
         getTrackAudioRefs(newTrack.id);
         setTracks((prev) => [
-            ...prev, {id: newTrack.id, name: newTrack.name, hasRecording: false, duration: 0, currentTime: 0, isPlaying: false},  
+            ...prev,
+            { id: newTrack.id, name: newTrack.name, hasRecording: false, duration: 0, muted: false },
         ]);
         setSelectedTrackId(newTrack.id);
+    };
+
+    const handleToggleMute = (trackId: string) => {
+        setTracks((prev) => prev.map((t) => (t.id === trackId ? {...t, muted: !t.muted} : t)));
     };
  
     // Builds (or bypasses) the distortion chain between a source and a destination.
@@ -343,44 +371,26 @@ const App = () => {
             refs.audioBuffer = decodedBuffer;
             refs.duration = decodedBuffer.duration;
 
-            refs.playbackOffset = 0;
-            if(refs.currentSource){
-                try {refs.currentSource.stop(); } catch{/*already stopped, ignore*/} 
-                refs.currentSource = null;
-            }
-            if(refs.animationFrame){
-                cancelAnimationFrame(refs.animationFrame);
-                refs.animationFrame = null;
-            }
-            
-            updateTrackState(trackId, {
-                hasRecording: true,
-                duration: decodedBuffer.duration,
-                currentTime: 0, 
-                isPlaying: false,
-            });
-
+            updateTrackState(trackId, {hasRecording: true, duration: decodedBuffer.duration});
             stream.getTracks().forEach((track) => track.stop());
+
+            const { data: userData } = await supabase.auth.getUser();
+            const userId = userData.user?.id;
+            const fileName = `${trackId}/${Date.now()}.webm`;
+            const { error: uploadError } = await supabase.storage
+                .from('audio-clips')
+                .upload(fileName, blob);
  
-            if (trackId) {
-                const { data: userData } = await supabase.auth.getUser();
-                const userId = userData.user?.id;
-                const fileName = `${trackId}/${Date.now()}.webm`;
-                const { error: uploadError } = await supabase.storage
-                    .from('audio-clips')
-                    .upload(fileName, blob);
- 
-                if (uploadError) {
-                    console.error('Upload failed: ', uploadError);
-                    return;
-                }
-                await supabase.from('clips').insert({
-                    track_id: trackId,
-                    uploaded_by: userId,
-                    storage_path: fileName,
-                    file_size_bytes: blob.size,
-                });
+            if (uploadError) {
+                console.error('Upload failed: ', uploadError);
+                return;
             }
+            await supabase.from('clips').insert({
+                track_id: trackId,
+                uploaded_by: userId,
+                storage_path: fileName,
+                file_size_bytes: blob.size,
+            });
         };
  
         recorder.start();
@@ -410,80 +420,98 @@ const App = () => {
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
  
-    const updateProgress = (trackId: string) => {
-        const refs = getTrackAudioRefs(trackId);
+    const updateMasterProgress = () => {
+        const master = masterPlaybackRef.current;
         if (!audioContextRef.current) return;
-        const elapsed = refs.playbackOffset + (audioContextRef.current.currentTime - refs.playbackStartContextTime);
-        const clamped = Math.min(elapsed, refs.duration);
-        updateTrackState(trackId, { currentTime: clamped });
-        refs.animationFrame = requestAnimationFrame(() => updateProgress(trackId));
+        const elapsed = master.playbackOffset + (audioContextRef.current.currentTime - master.playbackStartContextTime);
+        setMasterCurrentTime(Math.min(elapsed, getMasterDuration()));
+        master.animationFrame = requestAnimationFrame(() => updateMasterProgress);
     };
  
-    const startPlaybackFrom = (trackId: string, offset: number) => {
-        const refs = getTrackAudioRefs(trackId);
-        if(!audioContextRef.current || !refs.audioBuffer) return;
+    // Starts every track that has a recording, all from the same offset, so they play in sync.
+    // Each track gets its own effects chain + a persistent mute gain node feeding the speakers.
+    const startMasterPlaybackFrom = (offset: number) => {
+        if(!audioContextRef.current) return;
+        const playableTracks = tracks.filter((t) => t.hasRecording);
+        if(playableTracks.length === 0) return;
 
-        const source = audioContextRef.current.createBufferSource();
-        source.buffer = refs.audioBuffer;
+        const master = masterPlaybackRef.current;
+        master.isManualStop = false;
+        master.activeSources = [];
 
-        const cleanup = connectEffectsChain(
-            audioContextRef.current, source, audioContextRef.current.destination);
-        
-        source.onended = () => {
-            cleanup();
-            if(refs.isManualStop) {
-                refs.isManualStop = false;
+        let remainingToEnd = playableTracks.length;
+
+        playableTracks.forEach((track) => {
+            const refs = getTrackAudioRefs(track.id);
+            if(!refs.audioBuffer) {
+                remainingToEnd -= 1;
                 return;
             }
-            updateTrackState(trackId, {isPlaying: false, currentTime:0});
-            refs.playbackOffset = 0;
-            if(refs.animationFrame) cancelAnimationFrame(refs.animationFrame);
-        };
-        source.start(0, offset);
 
-        refs.currentSource = source;
-        refs.playbackOffset = offset;
-        refs.playbackStartContextTime = audioContextRef.current.currentTime;
-        updateTrackState(trackId, {isPlaying: true});
-        refs.animationFrame = requestAnimationFrame(() => updateProgress(trackId));   
+            const source = audioContextRef.current!.createBufferSource();
+            source.buffer = refs.audioBuffer;
+
+            const muteGain = audioContextRef.current!.createGain();
+            muteGain.gain.value = track.muted ? 0:1;
+            refs.muteGainNode = muteGain;
+
+            const cleanupDistortion = connectEffectsChain(audioContextRef.current!, source, muteGain);
+            muteGain.connect(audioContextRef.current!.destination);
+
+            source.onended = () => {
+                cleanupDistortion();
+                remainingToEnd -= 1;
+                if(master.isManualStop) return;
+                if(remainingToEnd <= 0){
+                    setMasterIsPlaying(false);
+                    setMasterCurrentTime(0);
+                    master.playbackOffset = 0;
+                    if(master.animationFrame) cancelAnimationFrame(master.animationFrame);
+                }
+            };
+            source.start(0, offset);
+            master.activeSources.push(source);
+        });
+
+        master.playbackOffset = offset;
+        master.playbackStartContextTime = audioContextRef.current.currentTime;
+        setMasterIsPlaying(true);
+        master.animationFrame = requestAnimationFrame(updateMasterProgress);
+    };
+    
+    const stopAllActiveSources = () => {
+        const master = masterPlaybackRef.current;
+        master.isManualStop = true;
+        master.activeSources.forEach((s) => {
+            try { s.stop(); } catch {/* already stopped, ignore */}
+        });
+        master.activeSources = [];
+        if (master.animationFrame) cancelAnimationFrame(master.animationFrame);
     };
  
-    const handlePlayPause = (trackId: string) => {
-        const refs = getTrackAudioRefs(trackId);
-        const track = tracks.find((t) => t.id === trackId);
-        if(track?.isPlaying){
-            refs.isManualStop = true;
-            const elapsed = refs.playbackOffset + (audioContextRef.current!.currentTime - refs.playbackStartContextTime);
-            refs.playbackOffset = elapsed;
-            refs.currentSource?.stop();
-            updateTrackState(trackId, {isPlaying: false});
-            if(refs.animationFrame) cancelAnimationFrame(refs.animationFrame);
+    const handleMasterPlayPause = () => {
+        const master = masterPlaybackRef.current;
+        if (masterIsPlaying) {
+            const elapsed = master.playbackOffset + (audioContextRef.current!.currentTime - master.playbackStartContextTime);
+            master.playbackOffset = elapsed;
+            stopAllActiveSources();
+            setMasterIsPlaying(false);
         } else {
-            startPlaybackFrom(trackId, refs.playbackOffset);
+            startMasterPlaybackFrom(master.playbackOffset);
         }
     };
- 
-    const handleRestart = (trackId: string) => {
-        const refs = getTrackAudioRefs(trackId);
-        const track = tracks.find((t) => t.id === trackId);
-        if(track?.isPlaying){
-            refs.isManualStop = true;
-            refs.currentSource?.stop();
-            if(refs.animationFrame) cancelAnimationFrame(refs.animationFrame);
-        }
-        startPlaybackFrom(trackId, 0);
+
+    const handleMasterRestart = () => {
+        if (masterIsPlaying) stopAllActiveSources();
+        startMasterPlaybackFrom(0);
     };
  
-    const handleSkipToEnd = (trackId: string) => {
-        const refs = getTrackAudioRefs(trackId);
-        const track = tracks.find((t) => t.id === trackId);
-        if(track?.isPlaying){
-            refs.isManualStop = true;
-            refs.currentSource?.stop();
-            if(refs.animationFrame) cancelAnimationFrame(refs.animationFrame);
-        }
-        refs.playbackOffset = refs.duration;
-        updateTrackState(trackId, {currentTime: refs.duration, isPlaying: false});
+    const handleMasterSkipToEnd = () => {
+        const masterDuration = getMasterDuration();
+        if (masterIsPlaying) stopAllActiveSources();
+        masterPlaybackRef.current.playbackOffset = masterDuration;
+        setMasterCurrentTime(masterDuration);
+        setMasterIsPlaying(false);
     };
  
     //temporary
@@ -516,6 +544,8 @@ const App = () => {
             </div>
         );
     }
+
+    const masterDuration = getMasterDuration();
  
     // 4. Default main dashboard
     return (
@@ -585,16 +615,65 @@ const App = () => {
                     </div>
                 )}
             </div>
- 
-            <div style={{marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10}}>
+
+            <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
                 {!isRecording ? (
                     <button onClick={startRecording} disabled={!selectedTrackId}>Start Recording</button>
-                ): (
+                ) : (
                     <button onClick={stopRecording}>Stop Recording</button>
                 )}
                 {!selectedTrackId && (
-                    <span style={{fontSize: 13, color: '#888'}}>Select a track below to record onto it</span>
+                    <span style={{ fontSize: 13, color: '#888' }}>Select a track below to record onto it</span>
                 )}
+            </div>
+ 
+            <div style={{ marginBottom: 20, maxWidth: 500, border: '1px solid #ccc', borderRadius: 6, padding: 16 }}>
+                <div style={{ fontWeight: 'bold', marginBottom: 8 }}>Playback</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
+                    <button onClick={handleMasterRestart} style={iconButtonStyle} aria-label="Restart">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
+                        </svg>
+                    </button>
+ 
+                    <button onClick={handleMasterPlayPause} style={iconButtonStyle} aria-label={masterIsPlaying ? 'Pause' : 'Play'}>
+                        {masterIsPlaying ? (
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                                <rect x="6" y="5" width="4" height="14" />
+                                <rect x="14" y="5" width="4" height="14" />
+                            </svg>
+                        ) : (
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                                <polygon points="6,4 20,12 6,20" />
+                            </svg>
+                        )}
+                    </button>
+ 
+                    <button onClick={handleMasterSkipToEnd} style={iconButtonStyle} aria-label="Skip to end">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+                            <polygon points="5,4 15,12 5,20" />
+                            <rect x="17" y="4" width="3" height="16" />
+                        </svg>
+                    </button>
+                </div>
+ 
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 12, minWidth: 36 }}>{formatTime(masterCurrentTime)}</span>
+                    <div style={{ flex: 1, height: 6, background: '#ddd', borderRadius: 3, position: 'relative' }}>
+                        <div
+                            style={{
+                                position: 'absolute',
+                                left: 0,
+                                top: 0,
+                                height: '100%',
+                                width: `${masterDuration ? (masterCurrentTime / masterDuration) * 100 : 0}%`,
+                                background: '#333',
+                                borderRadius: 3,
+                            }}
+                        />
+                    </div>
+                    <span style={{ fontSize: 12, minWidth: 36 }}>{formatTime(masterDuration)}</span>
+                </div>
             </div>
  
             <div style={{ marginTop: 20, maxWidth: 500 }}>
@@ -614,81 +693,32 @@ const App = () => {
                                 padding: 16,
                                 cursor: 'pointer',
                                 background: track.id === selectedTrackId ? '#f5f5f5' : '#fff',
+                                opacity: track.muted ? 0.5 : 1,
                             }}
                         >
-                            <InlineRename
-                                value={track.name}
-                                label="Rename track"
-                                onSave={async (newName) => {
-                                    const { error } = await supabase.from('tracks').update({ name: newName }).eq('id', track.id);
-                                    if (error) {
-                                        console.error('Failed to rename track:', error);
-                                        return;
-                                    }
-                                    updateTrackState(track.id, { name: newName });
-                                }}
-                            />
+                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                                <InlineRename
+                                    value={track.name}
+                                    label="Rename track"
+                                    onSave={async (newName) => {
+                                        const { error } = await supabase.from('tracks').update({ name: newName }).eq('id', track.id);
+                                        if (error) {
+                                            console.error('Failed to rename track:', error);
+                                            return;
+                                        }
+                                        updateTrackState(track.id, { name: newName });
+                                    }}
+                                />
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); handleToggleMute(track.id); }}
+                                    aria-label={track.muted ? 'Unmute track' : 'Mute track'}
+                                >
+                                    {track.muted ? 'Unmute' : 'Mute'}
+                                </button>
+                            </div>
  
                             {track.hasRecording ? (
-                                <>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); handleRestart(track.id); }}
-                                            style={iconButtonStyle}
-                                            aria-label="Restart"
-                                        >
-                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                                                <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
-                                            </svg>
-                                        </button>
- 
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); handlePlayPause(track.id); }}
-                                            style={iconButtonStyle}
-                                            aria-label={track.isPlaying ? 'Pause' : 'Play'}
-                                        >
-                                            {track.isPlaying ? (
-                                                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                                                    <rect x="6" y="5" width="4" height="14" />
-                                                    <rect x="14" y="5" width="4" height="14" />
-                                                </svg>
-                                            ) : (
-                                                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
-                                                    <polygon points="6,4 20,12 6,20" />
-                                                </svg>
-                                            )}
-                                        </button>
- 
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); handleSkipToEnd(track.id); }}
-                                            style={iconButtonStyle}
-                                            aria-label="Skip to end"
-                                        >
-                                            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                                                <polygon points="5,4 15,12 5,20" />
-                                                <rect x="17" y="4" width="3" height="16" />
-                                            </svg>
-                                        </button>
-                                    </div>
- 
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                                        <span style={{ fontSize: 12, minWidth: 36 }}>{formatTime(track.currentTime)}</span>
-                                        <div style={{ flex: 1, height: 6, background: '#ddd', borderRadius: 3, position: 'relative' }}>
-                                            <div
-                                                style={{
-                                                    position: 'absolute',
-                                                    left: 0,
-                                                    top: 0,
-                                                    height: '100%',
-                                                    width: `${track.duration ? (track.currentTime / track.duration) * 100 : 0}%`,
-                                                    background: '#333',
-                                                    borderRadius: 3,
-                                                }}
-                                            />
-                                        </div>
-                                        <span style={{ fontSize: 12, minWidth: 36 }}>{formatTime(track.duration)}</span>
-                                    </div>
-                                </>
+                                <div style={{ fontSize: 13, color: '#888' }}>{formatTime(track.duration)}</div>
                             ) : (
                                 <div style={{ fontSize: 13, color: '#888' }}>No recording yet</div>
                             )}
