@@ -16,6 +16,7 @@ const Projects = ({ onSelectProject }: { onSelectProject: (id: string) => void }
     const [inviteUsername, setInviteUsername] = useState<Record<string, string>>({});
     const [inviteStatus, setInviteStatus] = useState<Record<string, string>>({});
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+    const [openMenuProjectId, setOpenMenuProjectId] = useState<string | null>(null);
 
     const fetchProjects = async () => {
         //only returning rows where user is actually a project member
@@ -110,6 +111,7 @@ const Projects = ({ onSelectProject }: { onSelectProject: (id: string) => void }
         if (error) {
             setErrorMsg(error.message);
         } else {
+            setOpenMenuProjectId(null);
             fetchProjects();
         }
     };
@@ -130,42 +132,79 @@ const Projects = ({ onSelectProject }: { onSelectProject: (id: string) => void }
 
             {errorMsg && <p style={{ color: 'red' }}>{errorMsg}</p>}
 
+            {openMenuProjectId && (
+                <div
+                    onClick={() => setOpenMenuProjectId(null)}
+                    style={{position: 'fixed', inset: 0, zIndex: 5}}
+                />
+            )}
+
             <ol>
                 {projects.map((project) => (
-                    <li key={project.id} style={{ marginBottom: 15 }}>
-                        <InlineRename
-                            value={project.name}
-                            label="Rename project"
-                            onSave={async (newName) => {
-                                const { error } = await supabase.from('projects').update({ name: newName }).eq('id', project.id);
-                                if (error) {
-                                    setErrorMsg(error.message);
-                                    return;
-                                }
-                                setProjects((prev) => prev.map((p) => (p.id === project.id ? { ...p, name: newName } : p)));
-                            }}
-                        />
-                        <button onClick={() => onSelectProject(project.id)} style={{ marginLeft: 8 }}>Open</button>
-                        {project.created_by === currentUserId && (
-                            <button onClick={() => deleteProject(project.id, project.name)} style={{ marginLeft: 5 }}> Delete </button>
-                        )}
-                        <div style={{ marginTop: 5 }}>
+                    <li key={project.id} style={{ marginBottom: 15, position: 'relative' }}>
+                        <button onClick={() => onSelectProject(project.id)}>{project.name}</button>
+                        <button 
+                            onClick={() => setOpenMenuProjectId(openMenuProjectId === project.id ? null : project.id)}
+                            aria-label="Project settings"
+                            style={{marginLeft: 8}}
+                            >⋮</button>
+
+                        {openMenuProjectId === project.id && (
+                    <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            position: 'absolute',
+                            top: '100%',
+                            left: 0,
+                            marginTop: 4,
+                            background: '#fff',
+                            border: '1px solid #ccc',
+                            borderRadius: 6,
+                            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+                            padding: 12,
+                            minWidth: 240,
+                            zIndex: 10,
+                        }}
+                    >
+                        <div style={{ marginBottom: 12 }}>
+                            <InlineRename
+                                value={project.name}
+                                label="Rename project"
+                                onSave={async (newName) => {
+                                    const { error } = await supabase.from('projects').update({ name: newName }).eq('id', project.id);
+                                    if (error) {
+                                        setErrorMsg(error.message);
+                                        return;
+                                    }
+                                    setProjects((prev) => prev.map((p) => (p.id === project.id ? { ...p, name: newName } : p)));
+                                }}
+                            />
+                        </div>
+ 
+                        <div style={{ marginBottom: 12 }}>
                             <input
                                 type="text"
-                                placeholder="Bandmate's username"
+                                placeholder="Username"
                                 value={inviteUsername[project.id] || ''}
                                 onChange={(e) =>
                                     setInviteUsername((prev) => ({ ...prev, [project.id]: e.target.value }))
                                 }
                             />
                             <button onClick={() => inviteToProject(project.id)}>Invite</button>
-                            {inviteStatus[project.id] && <span style={{ marginLeft: 10 }}>{inviteStatus[project.id]}</span>}
+                            {inviteStatus[project.id] && (
+                                <div style={{ fontSize: 12, marginTop: 4 }}>{inviteStatus[project.id]}</div>
+                            )}
                         </div>
+ 
+                        {project.created_by === currentUserId && (
+                            <button onClick={() => deleteProject(project.id, project.name)}>Delete Project</button>
+                        )}
+                        </div>
+                    )}
                     </li>
                 ))}
             </ol>
         </div>
-
     );
 };
 
