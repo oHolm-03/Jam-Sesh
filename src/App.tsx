@@ -3,20 +3,13 @@ import Auth from './Auth';
 import { supabase } from './supabaseClient';
 import Projects from './Projects';
 import ResetPassword from './ResetPassword';
-import InlineRename from './InlineRename';
+import TrackList, {TrackData} from './Recording-Related/Tracklist';
+import { computeWaveformPeaks } from './Recording-Related/Audioutils';
  
 type DistortionNodeSet = {
     waveshaper: WaveShaperNode;
     toneFilter: BiquadFilterNode;
     levelGain: GainNode;
-};
-
-type TrackData = {
-    id: string;
-    name: string;
-    hasRecording: boolean;
-    duration: number;
-    muted: boolean;
 };
 
 type TrackAudioRefs = {
@@ -70,11 +63,7 @@ const App = () => {
     const getTrackAudioRefs = (trackId: string): TrackAudioRefs => {
         let refs = trackAudioRefsRef.current.get(trackId);
         if(!refs){
-            refs = {
-                audioBuffer: null,
-                duration: 0,
-                muteGainNode: null
-            };
+            refs = {audioBuffer: null, duration: 0, muteGainNode: null};
             trackAudioRefsRef.current.set(trackId, refs);
         }
         return refs;
@@ -210,6 +199,7 @@ const App = () => {
                 const refs = getTrackAudioRefs(row.id);
                 let hasRecording = false;
                 let duration = 0;
+                let waveformPeaks: TrackData['waveformPeaks'] = null;
 
                 const {data: clips} = await supabase
                     .from('clips')
@@ -230,6 +220,7 @@ const App = () => {
                         refs.duration = decodedBuffer.duration;
                         hasRecording = true;
                         duration = decodedBuffer.duration;
+                        waveformPeaks = computeWaveformPeaks(decodedBuffer);
                     }
                 }
                 loadedTracks.push({
@@ -238,6 +229,7 @@ const App = () => {
                     hasRecording,
                     duration,
                     muted: false,
+                    waveformPeaks,
                 });
             }
             setTracks(loadedTracks);
@@ -260,18 +252,26 @@ const App = () => {
         getTrackAudioRefs(newTrack.id);
         setTracks((prev) => [
             ...prev,
-            { id: newTrack.id, name: newTrack.name, hasRecording: false, duration: 0, muted: false },
+            { id: newTrack.id, name: newTrack.name, hasRecording: false, duration: 0, muted: false, waveformPeaks: null },
         ]);
         setSelectedTrackId(newTrack.id);
     };
+
+    const handleRenameTrack = async (trackId: string, newName: string) => {
+    const { error } = await supabase.from('tracks').update({ name: newName }).eq('id', trackId);
+    if (error) {
+        console.error('Failed to rename track:', error);
+        return;
+    }
+    updateTrackState(trackId, { name: newName });
+};
 
     const handleToggleMute = (trackId: string) => {
         setTracks((prev) => prev.map((t) => (t.id === trackId ? {...t, muted: !t.muted} : t)));
     };
  
     // Builds (or bypasses) the distortion chain between a source and a destination.
-    // Returns a cleanup function to call when that particular stream stops,
-    // so we stop pushing live parameter updates onto disconnected nodes.
+    // Returns a cleanup function to call when that particular stream stops, so we stop pushing live parameter updates onto disconnected nodes.
     const connectEffectsChain = (
         audioContext: AudioContext,
         sourceNode: AudioNode,
@@ -371,7 +371,7 @@ const App = () => {
             refs.audioBuffer = decodedBuffer;
             refs.duration = decodedBuffer.duration;
 
-            updateTrackState(trackId, {hasRecording: true, duration: decodedBuffer.duration});
+            updateTrackState(trackId, {hasRecording: true, duration: decodedBuffer.duration, waveformPeaks: computeWaveformPeaks(decodedBuffer),});
             stream.getTracks().forEach((track) => track.stop());
 
             const { data: userData } = await supabase.auth.getUser();
@@ -615,7 +615,7 @@ const App = () => {
                     </div>
                 )}
             </div>
-
+ 
             <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
                 {!isRecording ? (
                     <button onClick={startRecording} disabled={!selectedTrackId}>Start Recording</button>
@@ -627,7 +627,8 @@ const App = () => {
                 )}
             </div>
  
-            <div style={{ marginBottom: 20, maxWidth: 500, border: '1px solid #ccc', borderRadius: 6, padding: 16 }}>
+            {/* Master transport — controls every track in sync */}
+            <div style={{ marginBottom: 20, maxWidth: 700, border: '1px solid #ccc', borderRadius: 6, padding: 16 }}>
                 <div style={{ fontWeight: 'bold', marginBottom: 8 }}>Playback</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
                     <button onClick={handleMasterRestart} style={iconButtonStyle} aria-label="Restart">
@@ -676,55 +677,19 @@ const App = () => {
                 </div>
             </div>
  
-            <div style={{ marginTop: 20, maxWidth: 500 }}>
+            <div style={{ marginTop: 20, maxWidth: 700 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                     <h3 style={{ margin: 0 }}>Tracks</h3>
                     <button onClick={handleAddTrack}>+ Add Track</button>
                 </div>
  
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {tracks.map((track) => (
-                        <div
-                            key={track.id}
-                            onClick={() => setSelectedTrackId(track.id)}
-                            style={{
-                                border: track.id === selectedTrackId ? '2px solid #333' : '1px solid #ccc',
-                                borderRadius: 6,
-                                padding: 16,
-                                cursor: 'pointer',
-                                background: track.id === selectedTrackId ? '#f5f5f5' : '#fff',
-                                opacity: track.muted ? 0.5 : 1,
-                            }}
-                        >
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                                <InlineRename
-                                    value={track.name}
-                                    label="Rename track"
-                                    onSave={async (newName) => {
-                                        const { error } = await supabase.from('tracks').update({ name: newName }).eq('id', track.id);
-                                        if (error) {
-                                            console.error('Failed to rename track:', error);
-                                            return;
-                                        }
-                                        updateTrackState(track.id, { name: newName });
-                                    }}
-                                />
-                                <button
-                                    onClick={(e) => { e.stopPropagation(); handleToggleMute(track.id); }}
-                                    aria-label={track.muted ? 'Unmute track' : 'Mute track'}
-                                >
-                                    {track.muted ? 'Unmute' : 'Mute'}
-                                </button>
-                            </div>
- 
-                            {track.hasRecording ? (
-                                <div style={{ fontSize: 13, color: '#888' }}>{formatTime(track.duration)}</div>
-                            ) : (
-                                <div style={{ fontSize: 13, color: '#888' }}>No recording yet</div>
-                            )}
-                        </div>
-                    ))}
-                </div>
+                <TrackList
+                    tracks={tracks}
+                    selectedTrackId={selectedTrackId}
+                    onSelectTrack={setSelectedTrackId}
+                    onToggleMute={handleToggleMute}
+                    onRenameTrack={handleRenameTrack}
+                />
             </div>
         </div>
     );

@@ -4,6 +4,7 @@ type InlineRenameProps = {
     value: string;
     onSave: (newValue: string) => Promise<void> | void;
     label?: string; 
+    textStyle?: React.CSSProperties;
 };
 
 const InlineRename: React.FC<InlineRenameProps> = ({ value, onSave, label = 'Rename' }) => {
