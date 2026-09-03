@@ -551,7 +551,7 @@ const App = () => {
     return (
         <div style={{ padding: 40, fontFamily: 'sans-serif' }}>
             <button onClick={() => setCurrentProjectId(null)}>← Back to Projects</button>
-            <h1>Jam App — Record/Playback Prototype</h1>
+            <h1>Jam-Sesh Recording Studio</h1>
  
             <div style={{ marginBottom: 20 }}>
                 <label>Input device: </label>
@@ -616,16 +616,7 @@ const App = () => {
                 )}
             </div>
  
-            <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
-                {!isRecording ? (
-                    <button onClick={startRecording} disabled={!selectedTrackId}>Start Recording</button>
-                ) : (
-                    <button onClick={stopRecording}>Stop Recording</button>
-                )}
-                {!selectedTrackId && (
-                    <span style={{ fontSize: 13, color: '#888' }}>Select a track below to record onto it</span>
-                )}
-            </div>
+            
  
             {/* Master transport — controls every track in sync */}
             <div style={{ marginBottom: 20, maxWidth: 700, border: '1px solid #ccc', borderRadius: 6, padding: 16 }}>
@@ -656,7 +647,16 @@ const App = () => {
                             <rect x="17" y="4" width="3" height="16" />
                         </svg>
                     </button>
+                    <div>
+                    {!isRecording ? (
+                        <button onClick={startRecording} disabled={!selectedTrackId}>🔴</button>
+                    ) : (
+                        <button onClick={stopRecording}>🟥</button>
+                    )}
+                    </div>
                 </div>
+
+                
  
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <span style={{ fontSize: 12, minWidth: 36 }}>{formatTime(masterCurrentTime)}</span>
