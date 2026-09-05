@@ -5,12 +5,14 @@ import Projects from './Projects';
 import ResetPassword from './ResetPassword';
 import TrackList, {TrackData} from './Recording-Related/Tracklist';
 import { computeWaveformPeaks } from './Recording-Related/Audioutils';
+import { EFFECT_DEFINITIONS, EFFECT_PROCESSORS, TrackEffectInstance } from './Effects-Related/Effects';
+import EffectsPanel from './Effects-Related/EffectsPanel';
  
-type DistortionNodeSet = {
-    waveshaper: WaveShaperNode;
-    toneFilter: BiquadFilterNode;
-    levelGain: GainNode;
-};
+// type DistortionNodeSet = {
+//     waveshaper: WaveShaperNode;
+//     toneFilter: BiquadFilterNode;
+//     levelGain: GainNode;
+// };
 
 type TrackAudioRefs = {
     audioBuffer: AudioBuffer | null;
@@ -48,7 +50,7 @@ const App = () => {
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const chunksRef = useRef<Blob[]>([]);
     const audioContextRef = useRef<AudioContext | null>(null);
-    const activeDistortionNodesRef = useRef<DistortionNodeSet[]>([]);
+    const activeEffectNodesRef = useRef<Map<string, (params: Record<string, number>) => void>>(new Map());
     const monitorCleanupRef = useRef<() => void>(() => {/* noop until monitoring starts */});
     const trackAudioRefsRef = useRef<Map<string, TrackAudioRefs>>(new Map());
     const masterPlaybackRef = useRef<MasterPlaybackState>({
@@ -93,24 +95,31 @@ const App = () => {
         loadDevices();
     }, []);
  
-    // Push live slider changes onto whatever distortion nodes are currently active
-    useEffect(() => {
-        activeDistortionNodesRef.current.forEach(({ waveshaper, toneFilter, levelGain }) => {
-            waveshaper.curve = makeDistortionCurve(distortionParams.drive);
-            toneFilter.frequency.value = distortionParams.tone;
-            levelGain.gain.value = distortionParams.level;
-        });
-    }, [distortionParams]);
 
-    // push live mute changes onto whatever mute gain nodes are currently active
+    /* RESUME FROM HERE */ 
+
+    // Push live paraeter changes onto whichever effect chains are currently active
     useEffect(() => {
         tracks.forEach((track) => {
-            const refs = trackAudioRefsRef.current.get(track.id);
-            if(refs?.muteGainNode) {
-                refs.muteGainNode.gain.value = track.muted ? 0:1;
-            }
+            track.effects.forEach((effect) => {
+                const update = activeEffectNodesRef.current.get(`${track.id}:${effect.type}`);
+                if(update) update(effect.params);
+            });
         });
-    }, [tracks]);
+
+        const monitorUpdate = activeEffectNodesRef.current.get('monitor:distortionOn');
+        if(monitorUpdate) monitorUpdate(distortionOn ? distortionParams : {drive: 0, tone: 20000, level: 0});
+    }, [tracks, distortionOn, distortionParams]);
+
+    // push live mute changes onto whatever mute gain nodes are currently active
+    // useEffect(() => {
+    //     tracks.forEach((track) => {
+    //         const refs = trackAudioRefsRef.current.get(track.id);
+    //         if(refs?.muteGainNode) {
+    //             refs.muteGainNode.gain.value = track.muted ? 0:1;
+    //         }
+    //     });
+    // }, [tracks]);
  
     // DEBUG & URL CHECK: Inspect environment on load for password recovery
     useEffect(() => {
@@ -229,6 +238,7 @@ const App = () => {
                     hasRecording,
                     duration,
                     muted: false,
+                    effects: [],
                     waveformPeaks,
                 });
             }
@@ -252,7 +262,7 @@ const App = () => {
         getTrackAudioRefs(newTrack.id);
         setTracks((prev) => [
             ...prev,
-            { id: newTrack.id, name: newTrack.name, hasRecording: false, duration: 0, muted: false, waveformPeaks: null },
+            { id: newTrack.id, name: newTrack.name, hasRecording: false, duration: 0, muted: false, effects: [], waveformPeaks: null },
         ]);
         setSelectedTrackId(newTrack.id);
     };
@@ -266,47 +276,90 @@ const App = () => {
     updateTrackState(trackId, { name: newName });
 };
 
-    const handleToggleMute = (trackId: string) => {
+const handleToggleMute = (trackId: string) => {
         setTracks((prev) => prev.map((t) => (t.id === trackId ? {...t, muted: !t.muted} : t)));
     };
+
+const handleDeleteTrack = async (trackId: string) => {
+    const track = tracks.find((t) => t.id === trackId);
+    const confirmed = window.confirm(`Delete "${track?.name ?? 'this track'}"? This will permanently remove its recording.`);
+    if (!confirmed) return;
+
+    // Remove any stored audio files for this track first, so they don't become orphaned in storage
+    const { data: clips } = await supabase
+        .from('clips')
+        .select('storage_path')
+        .eq('track_id', trackId);
+
+    if (clips && clips.length > 0) {
+        await supabase.storage.from('audio-clips').remove(clips.map((c) => c.storage_path));
+    }
+
+    const { error } = await supabase.from('tracks').delete().eq('id', trackId);
+    if (error) {
+        console.error('Failed to delete track:', error);
+        return;
+    }
+
+    trackAudioRefsRef.current.delete(trackId);
+    setTracks((prev) => prev.filter((t) => t.id !== trackId));
+    setSelectedTrackId((prev) => (prev === trackId ? null : prev));
+};
  
-    // Builds (or bypasses) the distortion chain between a source and a destination.
-    // Returns a cleanup function to call when that particular stream stops, so we stop pushing live parameter updates onto disconnected nodes.
+    /* Adds the effect (with its default params) if the track doesn't have it yet,
+    or removes it if it does (one entry per effect type per track) */
+    const handleToggleTrackEffect = (trackId: string, type: string) => {
+        setTracks((prev) => prev.map((t) => {
+            if(t.id !== trackId) return t;
+            const exists = t.effects.some((e) => e.type === type);
+            if(exists){
+                return {...t, effects: t.effects.filter((e) => e.type !== type)};
+            }
+            const definition = EFFECT_DEFINITIONS.find((d) => d.type === type);
+            const defaultParams = definition ? {...definition.defaultParams} : {};
+            return {...t, effects: [...t.effects, {type, params: defaultParams}]};
+        }));
+    };
+
+    const handleUpdateTrackEffectParam = (trackId: string, type: string, key: string, value: number) => {
+        setTracks((prev) => prev.map((t) => {
+            if(t.id !== trackId) return t;
+            return {
+                ...t, effects: t.effects.map((e) => (e.type === type ? {...e, params: {...e.params, [key]: value}} : e)),
+            };
+        }));
+    };
+
+    // Builds a chain of the given effects between a source and a destination, in order
     const connectEffectsChain = (
         audioContext: AudioContext,
         sourceNode: AudioNode,
-        destinationNode: AudioNode
+        destinationNode: AudioNode,
+        effects: TrackEffectInstance[],
+        liveKey: string
     ): (() => void) => {
-        if (!distortionOn) {
-            sourceNode.connect(destinationNode);
-            return () => {/* nothing to clean up */};
-        }
- 
-        const waveshaper = audioContext.createWaveShaper();
-        waveshaper.curve = makeDistortionCurve(distortionParams.drive);
-        waveshaper.oversample = '4x';
- 
-        const toneFilter = audioContext.createBiquadFilter();
-        toneFilter.type = 'lowpass';
-        toneFilter.frequency.value = distortionParams.tone;
- 
-        const levelGain = audioContext.createGain();
-        levelGain.gain.value = distortionParams.level;
- 
-        sourceNode.connect(waveshaper);
-        waveshaper.connect(toneFilter);
-        toneFilter.connect(levelGain);
-        levelGain.connect(destinationNode);
- 
-        const nodeSet: DistortionNodeSet = { waveshaper, toneFilter, levelGain };
-        activeDistortionNodesRef.current.push(nodeSet);
- 
+        let currentNode: AudioNode = sourceNode;
+        const registeredKeys: string[] = [];
+
+        effects.forEach((effect) => {
+            const processor = EFFECT_PROCESSORS[effect.type];
+            if(!processor) return;
+
+            const built = processor.build(audioContext, effect.params);
+            currentNode.connect(built.inputNode);
+            currentNode = built.outputNode;
+
+            const key = `${liveKey}:${effect.type}`;
+            activeEffectNodesRef.current.set(key, built.update);
+            registeredKeys.push(key);
+        });
+        currentNode.connect(destinationNode);
+
         return () => {
-            activeDistortionNodesRef.current = activeDistortionNodesRef.current.filter(
-                (n) => n !== nodeSet
-            );
+            registeredKeys.forEach((key) => activeEffectNodesRef.current.delete(key));
         };
     };
+       
  
     const startMonitoring = async () => {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -321,11 +374,16 @@ const App = () => {
             audioContextRef.current = new AudioContext({ latencyHint: 'interactive' });
         }
         const source = audioContextRef.current.createMediaStreamSource(stream);
+
+        const monitorEffects: TrackEffectInstance[] = distortionOn
+            ? [{type: 'distortion', params: distortionParams}] : [];
  
         monitorCleanupRef.current = connectEffectsChain(
             audioContextRef.current,
             source,
-            audioContextRef.current.destination
+            audioContextRef.current.destination,
+            monitorEffects,
+            'monitor'
         );
  
         monitorStreamRef.current = stream;
@@ -403,15 +461,15 @@ const App = () => {
         setIsRecording(false);
     };
  
-    const makeDistortionCurve = (amount: number) => {
-        const samples = 44100;
-        const curve = new Float32Array(samples);
-        for (let i = 0; i < samples; i++) {
-            const x = (i * 2) / samples - 1;
-            curve[i] = ((3 + amount) * x * 20 * (Math.PI / 180)) / (Math.PI + amount * Math.abs(x));
-        }
-        return curve;
-    };
+    // const makeDistortionCurve = (amount: number) => {
+    //     const samples = 44100;
+    //     const curve = new Float32Array(samples);
+    //     for (let i = 0; i < samples; i++) {
+    //         const x = (i * 2) / samples - 1;
+    //         curve[i] = ((3 + amount) * x * 20 * (Math.PI / 180)) / (Math.PI + amount * Math.abs(x));
+    //     }
+    //     return curve;
+    // };
  
     // Core playback function
     const formatTime = (seconds: number) => {
@@ -455,11 +513,11 @@ const App = () => {
             muteGain.gain.value = track.muted ? 0:1;
             refs.muteGainNode = muteGain;
 
-            const cleanupDistortion = connectEffectsChain(audioContextRef.current!, source, muteGain);
+            const cleanupEffects = connectEffectsChain(audioContextRef.current!, source, muteGain, track.effects, track.id);
             muteGain.connect(audioContextRef.current!.destination);
 
             source.onended = () => {
-                cleanupDistortion();
+                cleanupEffects();
                 remainingToEnd -= 1;
                 if(master.isManualStop) return;
                 if(remainingToEnd <= 0){
@@ -546,6 +604,7 @@ const App = () => {
     }
 
     const masterDuration = getMasterDuration();
+    const selectedTrack = tracks.find((t) => t.id === selectedTrackId) ?? null;
  
     // 4. Default main dashboard
     return (
@@ -576,7 +635,7 @@ const App = () => {
                         checked={distortionOn}
                         onChange={(e) => setDistortionOn(e.target.checked)}
                     />
-                    Distortion
+                    Distortion (for monitoring)
                 </label>
  
                 {distortionOn && (
@@ -689,8 +748,20 @@ const App = () => {
                     onSelectTrack={setSelectedTrackId}
                     onToggleMute={handleToggleMute}
                     onRenameTrack={handleRenameTrack}
+                    onDeleteTrack={handleDeleteTrack}
                 />
             </div>
+
+            {selectedTrack && (
+                <EffectsPanel
+                    key={selectedTrack.id}
+                    track={selectedTrack}
+                    onToggleEffect={(type) => handleToggleTrackEffect(selectedTrack.id, type)}
+                    onUpdateEffectParam={(type, key, value) => handleUpdateTrackEffectParam(selectedTrack.id, type, key, value)}
+                    onClose={() => setSelectedTrackId(null)}
+                />
+            )}
+
         </div>
     );
 };
