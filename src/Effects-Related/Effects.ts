@@ -68,8 +68,46 @@ const distortionProcessor: EffectProcessor = {
     },
 };
 
+const delayProcessor: EffectProcessor = {
+    build: (audioContext, params) => {
+        const inputNode = audioContext.createGain();
+        const outputNode = audioContext.createGain();
+
+        const dryGain = audioContext.createGain();
+        dryGain.gain.value = 1;
+
+        const delayNode = audioContext.createDelay(5.0);
+        delayNode.delayTime.value = params.time;
+
+        const feedbackGain = audioContext.createGain();
+        feedbackGain.gain.value = params.feedback;
+
+        const wetGain = audioContext.createGain();
+        wetGain.gain.value = params.mix;
+
+        inputNode.connect(dryGain);
+        dryGain.connect(outputNode);
+
+        inputNode.connect(delayNode);
+        delayNode.connect(feedbackGain);
+        feedbackGain.connect(delayNode);
+        delayNode.connect(wetGain);
+        wetGain.connect(outputNode);
+
+        return {
+            inputNode, outputNode,
+            update: (newParams) => {
+                delayNode.delayTime.value = newParams.time;
+                feedbackGain.gain.value = newParams.feedback;
+                wetGain.gain.value = newParams.mix;
+            },
+        };
+    },
+};
+
 export const EFFECT_PROCESSORS: Record<string, EffectProcessor> = {
     distortion: distortionProcessor,
+    delay: delayProcessor,
 };
 
 export const EFFECT_DEFINITIONS: EffectDefinition[] = [
@@ -82,5 +120,15 @@ export const EFFECT_DEFINITIONS: EffectDefinition[] = [
             { key: 'level', label: 'Level', min: 0, max: 2, step: 0.01 },
         ],
         defaultParams: { drive: 50, tone: 8000, level: 1 },
+    },
+    {
+        type: 'delay',
+        label: 'Delay',
+        params: [
+            {key: 'time', label: 'Time', min: 0.05, max: 1, step: 0.01},
+            {key: 'feedback', label: 'Feedback', min: 0, max: 0.9, step: 0.01},
+            {key: 'mix', label: 'Mix', min: 0, max: 1, step: 0.01},
+        ],
+        defaultParams: {time: 0.3, feedback: 0.35, mix: 0.4},
     },
 ];
