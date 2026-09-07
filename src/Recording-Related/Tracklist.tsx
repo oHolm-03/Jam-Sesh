@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import InlineRename from '../InlineRename';
 import { WaveformPeak } from './Audioutils';
 import { TrackEffectInstance } from '../Effects-Related/Effects';
+import './Tracklist.css';
 
 export type TrackData = {
     id: string;
@@ -22,11 +23,7 @@ type TrackListProps = {
     onDeleteTrack: (trackId: string) => Promise<void> | void;
 };
 
-// Cycled per track by index, echoing the piano-roll/guitar/bass/synth/vocal
-// color coding you'd see in a DAW like Logic or GarageBand.
 const LANE_COLORS = ['#c9a227', '#3f5fb5', '#3a9c56', '#8a4fc9', '#c9426e'];
-const LANE_HEIGHT = 76;
-const CONTAINER_RADIUS = 6;
 
 const TrackList: React.FC<TrackListProps> = ({
     tracks,
@@ -39,126 +36,72 @@ const TrackList: React.FC<TrackListProps> = ({
     const [openMenuTrackId, setOpenMenuTrackId] = useState<string | null>(null);
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', border: '2px solid #222', borderRadius: 6, position: 'relative' }}>
-            {/* Invisible overlay closes the open menu when you click anywhere outside it */}
+        <div className="track-list-container">
             {openMenuTrackId && (
-                <div
-                    onClick={() => setOpenMenuTrackId(null)}
-                    style={{ position: 'fixed', inset: 0, zIndex: 5 }}
-                />
+                <div className="track-list-overlay" onClick={() => setOpenMenuTrackId(null)} />
             )}
 
             {tracks.map((track, index) => {
                 const color = LANE_COLORS[index % LANE_COLORS.length];
                 const isSelected = track.id === selectedTrackId;
-                const isFirst = index === 0;
-                const isLast = index === tracks.length-1;
+                const laneClassName = `track-lane${isSelected ? ' track-lane--selected' : ''}`;
 
                 return (
                     <div
                         key={track.id}
                         onClick={() => onSelectTrack(track.id)}
-                        style={{
-                            position: 'relative',
-                            height: LANE_HEIGHT,
-                            background: color,
-                            borderBottom: isLast ? 'none' : '1px solid rgba(0,0,0,0.3)',
-                            outline: isSelected ? '2px solid #fff' : 'none',
-                            outlineOffset: -2,
-                            cursor: 'pointer',
-                            opacity: track.muted ? 0.45 : 1,
-                            borderTopLeftRadius: isFirst ? CONTAINER_RADIUS : 0,
-                            borderTopRightRadius: isFirst ? CONTAINER_RADIUS : 0,
-                            borderBottomLeftRadius: isLast ? CONTAINER_RADIUS : 0,
-                            borderBottomRightRadius: isLast ? CONTAINER_RADIUS : 0,
-                            overflow: 'hidden',
-                        }}
+                        className={laneClassName}
+                        style={{ '--lane-color': color } as React.CSSProperties}
                     >
-                        {/* Waveform */}
-                        {track.hasRecording && track.waveformPeaks ? (
-                            <svg
-                                viewBox={`0 0 ${track.waveformPeaks.length} 100`}
-                                preserveAspectRatio="none"
-                                style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%' }}
-                            >
-                                {track.waveformPeaks.map((p, i) => (
-                                    <line
-                                        key={i}
-                                        x1={i}
-                                        x2={i}
-                                        y1={50 - p.max * 48}
-                                        y2={50 - p.min * 48}
-                                        stroke="rgba(255,255,255,0.85)"
-                                        strokeWidth={1}
-                                    />
-                                ))}
-                            </svg>
-                        ) : (
-                            <div style={{ position: 'absolute', bottom: 8, left: 8, color: 'rgba(255,255,255,0.75)', fontSize: 12 }}>
-                                No recording yet
+                        <div className="track-waveform-wrapper">
+                            {track.hasRecording && track.waveformPeaks ? (
+                                <svg
+                                    className="track-waveform-svg"
+                                    viewBox={`0 0 ${track.waveformPeaks.length} 100`}
+                                    preserveAspectRatio="none"
+                                >
+                                    {track.waveformPeaks.map((p, i) => (
+                                        <line
+                                            key={i}
+                                            x1={i}
+                                            x2={i}
+                                            y1={50 - p.max * 48}
+                                            y2={50 - p.min * 48}
+                                            stroke="rgba(255,255,255,0.85)"
+                                            strokeWidth={1}
+                                        />
+                                    ))}
+                                </svg>
+                            ) : (
+                                <div className="track-empty-label">No recording yet</div>
+                            )}
+
+                            {track.effects.length > 0 && (
+                                <div className="track-effects-badge">
+                                    {track.effects.length} effect{track.effects.length > 1 ? 's' : ''}
+                                </div>
+                            )}
+
+                            {track.muted && <div className="track-muted-overlay" />}
+                        </div>
+
+                        <div className="track-header" onClick={(e) => e.stopPropagation()}>
+                            <div className="track-name-group">
+                                <span className="track-name">{track.name}</span>
+                                {track.muted && <span className="track-muted-badge">Muted</span>}
                             </div>
-                        )}
-
-                        {/* Generic badge - shows a count instead of naming a specific effect*/}
-
-                        {track.effects.length > 0 && (
-                            <div    
-                                style={{
-                                    position: 'absolute',
-                                    bottom: 8,
-                                    right: 8,
-                                    fontSize: 10,
-                                    color: '#fff',
-                                    background: 'rgba(0,0,0,0.35)',
-                                    borderRadius: 4,
-                                    padding: '2px 6px',
-                                }}
-                            >
-                                {track.effects.length} effect{track.effects.length > 1 ? 's' : ''}
-                            </div>
-                        )}
-
-                        {/* Label + settings button, on top of the waveform */}
-                        <div
-                            onClick={(e) => e.stopPropagation()}
-                            style={{
-                                position: 'absolute',
-                                top: 4,
-                                left: 8,
-                                right: 8,
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                            }}
-                        >
-                            <span style={{ color: '#fff', fontSize: 12, fontWeight: 'bold', textShadow: '0 1px 2px rgba(0,0,0,0.5)' }}>
-                                {track.name}
-                            </span>
                             <button
+                                className="track-settings-button"
                                 onClick={() => setOpenMenuTrackId(openMenuTrackId === track.id ? null : track.id)}
                                 aria-label="Track settings"
-                                style={{ fontSize: 12, padding: '2px 6px' }}
                             >
                                 ⋮
                             </button>
                         </div>
 
                         {openMenuTrackId === track.id && (
-                            <div
-                                onClick={(e) => e.stopPropagation()}
-                                style={{
-                                    position: 'absolute', ...(isLast ? {bottom: 28} : {top:28}),
-                                    right: 8,
-                                    background: '#fff',
-                                    border: '1px solid #ccc',
-                                    borderRadius: 6,
-                                    boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
-                                    padding: 12,
-                                    minWidth: 200,
-                                    zIndex: 10,
-                                }}
-                            >
-                                <div style={{ marginBottom: 10 }}>
+                            <div className="track-menu" onClick={(e) => e.stopPropagation()}>
+                                <div className="track-menu-rename-row">
                                     <InlineRename
                                         value={track.name}
                                         label="Rename track"
@@ -167,18 +110,18 @@ const TrackList: React.FC<TrackListProps> = ({
                                 </div>
 
                                 <button
+                                    className="track-menu-action track-menu-action--spaced"
                                     onClick={() => onToggleMute(track.id)}
-                                    style={{ display: 'block', width: '100%', marginBottom: 10 }}
                                 >
                                     {track.muted ? 'Unmute Track' : 'Mute Track'}
                                 </button>
 
                                 <button
+                                    className="track-menu-action"
                                     onClick={() => {
                                         setOpenMenuTrackId(null);
                                         onDeleteTrack(track.id);
                                     }}
-                                    style={{ display: 'block', width: '100%' }}
                                 >
                                     Delete Track
                                 </button>
