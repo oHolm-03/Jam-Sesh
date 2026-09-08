@@ -1,0 +1,94 @@
+.app-container {
+    padding: 40px;
+    font-family: sans-serif;
+}
+
+.welcome-message {
+    padding: 20px 40px 0;
+}
+
+.device-select-row {
+    margin-bottom: 20px;
+}
+
+.monitoring-controls {
+    margin-bottom: 20px;
+}
+
+.distortion-toggle-label {
+    margin-left: 10px;
+}
+
+.distortion-sliders {
+    display: flex;
+    gap: 20px;
+    margin-top: 10px;
+}
+
+.master-transport {
+    margin-bottom: 20px;
+    max-width: 700px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    padding: 16px;
+}
+
+.master-transport-title {
+    font-weight: bold;
+    margin-bottom: 8px;
+}
+
+.transport-buttons {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 8px;
+}
+
+.icon-button {
+    /* placeholder — no rules yet, matches the old empty iconButtonStyle object */
+}
+
+.progress-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.time-label {
+    font-size: 12px;
+    min-width: 36px;
+}
+
+.progress-track {
+    flex: 1;
+    height: 6px;
+    background: #ddd;
+    border-radius: 3px;
+    position: relative;
+}
+
+.progress-fill {
+    position: absolute;
+    left: 0;
+    top: 0;
+    height: 100%;
+    background: #333;
+    border-radius: 3px;
+}
+
+.tracks-section {
+    margin-top: 20px;
+    max-width: 700px;
+}
+
+.tracks-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.tracks-title {
+    margin: 0;
+}

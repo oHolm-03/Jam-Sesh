@@ -7,12 +7,7 @@ import TrackList, {TrackData} from './Recording-Related/Tracklist';
 import { computeWaveformPeaks } from './Recording-Related/Audioutils';
 import { EFFECT_DEFINITIONS, EFFECT_PROCESSORS, TrackEffectInstance } from './Effects-Related/Effects';
 import EffectsPanel from './Effects-Related/EffectsPanel';
- 
-// type DistortionNodeSet = {
-//     waveshaper: WaveShaperNode;
-//     toneFilter: BiquadFilterNode;
-//     levelGain: GainNode;
-// };
+import './App.css';
 
 type TrackAudioRefs = {
     audioBuffer: AudioBuffer | null;
@@ -96,9 +91,6 @@ const App = () => {
         };
         loadDevices();
     }, []);
- 
-
-    /* RESUME FROM HERE */ 
 
     // Push live paraeter changes onto whichever effect chains are currently active
     useEffect(() => {
@@ -112,16 +104,6 @@ const App = () => {
         const monitorUpdate = activeEffectNodesRef.current.get('monitor:distortionOn');
         if(monitorUpdate) monitorUpdate(distortionOn ? distortionParams : {drive: 0, tone: 20000, level: 0});
     }, [tracks, distortionOn, distortionParams]);
-
-    // push live mute changes onto whatever mute gain nodes are currently active
-    // useEffect(() => {
-    //     tracks.forEach((track) => {
-    //         const refs = trackAudioRefsRef.current.get(track.id);
-    //         if(refs?.muteGainNode) {
-    //             refs.muteGainNode.gain.value = track.muted ? 0:1;
-    //         }
-    //     });
-    // }, [tracks]);
  
     // DEBUG & URL CHECK: Inspect environment on load for password recovery
     useEffect(() => {
@@ -312,8 +294,7 @@ const handleDeleteTrack = async (trackId: string) => {
     setSelectedTrackId((prev) => (prev === trackId ? null : prev));
 };
  
-    /* Adds the effect (with its default params) if the track doesn't have it yet,
-    or removes it if it does (one entry per effect type per track) */
+    /* Adds the effect (with its default params) if the track doesn't have it yet */
     const handleToggleTrackEffect = (trackId: string, type: string) => {
         setTracks((prev) => prev.map((t) => {
             if(t.id !== trackId) return t;
@@ -467,16 +448,6 @@ const handleDeleteTrack = async (trackId: string) => {
         setIsRecording(false);
     };
  
-    // const makeDistortionCurve = (amount: number) => {
-    //     const samples = 44100;
-    //     const curve = new Float32Array(samples);
-    //     for (let i = 0; i < samples; i++) {
-    //         const x = (i * 2) / samples - 1;
-    //         curve[i] = ((3 + amount) * x * 20 * (Math.PI / 180)) / (Math.PI + amount * Math.abs(x));
-    //     }
-    //     return curve;
-    // };
- 
     // Core playback function
     const formatTime = (seconds: number) => {
         const mins = Math.floor(seconds / 60);
@@ -529,7 +500,7 @@ const handleDeleteTrack = async (trackId: string) => {
             if (remainingToEnd <= 0) {
                 if (master.animationFrame) cancelAnimationFrame(master.animationFrame);
                 if (isLoopingRef.current) {
-                    startMasterPlaybackFrom(0);   // loop: go again from the top
+                    startMasterPlaybackFrom(0); 
                 } else {
                     setMasterIsPlaying(false);
                     setMasterCurrentTime(0);
@@ -586,9 +557,6 @@ const handleDeleteTrack = async (trackId: string) => {
         setIsLooping((prev) => !prev);
     };
  
-    //temporary
-    const iconButtonStyle: React.CSSProperties = {};
- 
     // 1. Intercept render tree to show password recovery page first
     if (isPasswordRecovery) {
         return (
@@ -611,7 +579,7 @@ const handleDeleteTrack = async (trackId: string) => {
     if (!currentProjectId) {
         return (
             <div>
-                {username && <p style={{ padding: '20px 40px 0' }}>Welcome, {username}!</p>}
+                {username && <p className="welcome-message">Welcome, {username}!</p>}
                 <Projects onSelectProject={setCurrentProjectId} />
             </div>
         );
@@ -622,11 +590,11 @@ const handleDeleteTrack = async (trackId: string) => {
  
     // 4. Default main dashboard
     return (
-        <div style={{ padding: 40, fontFamily: 'sans-serif' }}>
+        <div className="app-container">
             <button onClick={() => setCurrentProjectId(null)}>← Back to Projects</button>
             <h1>Jam-Sesh Recording Studio</h1>
  
-            <div style={{ marginBottom: 20 }}>
+            <div className="device-select-row">
                 <label>Input device: </label>
                 <select value={selectedDeviceId} onChange={(e) => setSelectedDeviceId(e.target.value)}>
                     {devices.map((device) => (
@@ -637,13 +605,13 @@ const handleDeleteTrack = async (trackId: string) => {
                 </select>
             </div>
  
-            <div style={{ marginBottom: 20 }}>
+            <div className="monitoring-controls">
                 {!isMonitoring ? (
                     <button onClick={startMonitoring}>Start Monitoring</button>
                 ) : (
                     <button onClick={stopMonitoring}>Stop Monitoring</button>
                 )}
-                <label style={{ marginLeft: 10 }}>
+                <label className="distortion-toggle-label">
                     <input
                         type="checkbox"
                         checked={distortionOn}
@@ -653,7 +621,7 @@ const handleDeleteTrack = async (trackId: string) => {
                 </label>
  
                 {distortionOn && (
-                    <div style={{ display: 'flex', gap: 20, marginTop: 10 }}>
+                    <div className="distortion-sliders">
                         <label>
                             Drive
                             <input
@@ -689,17 +657,15 @@ const handleDeleteTrack = async (trackId: string) => {
                 )}
             </div>
  
-            
- 
             {/* Master transport — controls every track in sync */}
-            <div style={{ marginBottom: 20, maxWidth: 700, border: '1px solid #ccc', borderRadius: 6, padding: 16 }}>
-                <div style={{ fontWeight: 'bold', marginBottom: 8 }}>Playback</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
-                    <button onClick={handleMasterRestart} style={iconButtonStyle} aria-label="Restart">
+            <div className="master-transport">
+                <div className="master-transport-title">Playback</div>
+                <div className="transport-buttons">
+                    <button onClick={handleMasterRestart} className="icon-button" aria-label="Restart">
                         ⏮️   
                     </button>
  
-                    <button onClick={handleMasterPlayPause} style={iconButtonStyle} aria-label={masterIsPlaying ? 'Pause' : 'Play'}>
+                    <button onClick={handleMasterPlayPause} className="icon-button" aria-label={masterIsPlaying ? 'Pause' : 'Play'}>
                         {masterIsPlaying ? (
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
                                 <rect x="6" y="5" width="4" height="14" />
@@ -712,14 +678,15 @@ const handleDeleteTrack = async (trackId: string) => {
                         )}
                     </button>
  
-                    <button onClick={handleMasterSkipToEnd} style={iconButtonStyle} aria-label="Skip to end">
+                    <button onClick={handleMasterSkipToEnd} className="icon-button" aria-label="Skip to end">
                         ⏭️
                     </button>
 
                     <button
                         onClick={handleToggleLoop}
                         aria-label={isLooping ? 'Disable loop' : 'Enable loop'}
-                        style={{ ...iconButtonStyle, opacity: isLooping ? 1 : 0.5 }}
+                        className="icon-button"
+                        style={{ opacity: isLooping ? 1 : 0.5 }}
                     >
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
                             <path d="M17 1l4 4-4 4V6H7c-1.1 0-2 .9-2 2v3H3V8c0-2.21 1.79-4 4-4h10V1zM7 23l-4-4 4-4v3h10c1.1 0 2-.9 2-2v-3h2v3c0 2.21-1.79 4-4 4H7v3z"/>
@@ -735,30 +702,21 @@ const handleDeleteTrack = async (trackId: string) => {
                     </div>
                 </div>
 
-                
- 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: 12, minWidth: 36 }}>{formatTime(masterCurrentTime)}</span>
-                    <div style={{ flex: 1, height: 6, background: '#ddd', borderRadius: 3, position: 'relative' }}>
+                <div className="progress-row">
+                    <span className="time-label">{formatTime(masterCurrentTime)}</span>
+                    <div className="progress-track">
                         <div
-                            style={{
-                                position: 'absolute',
-                                left: 0,
-                                top: 0,
-                                height: '100%',
-                                width: `${masterDuration ? (masterCurrentTime / masterDuration) * 100 : 0}%`,
-                                background: '#333',
-                                borderRadius: 3,
-                            }}
+                            className="progress-fill"
+                            style={{ width: `${masterDuration ? (masterCurrentTime / masterDuration) * 100 : 0}%` }}
                         />
                     </div>
-                    <span style={{ fontSize: 12, minWidth: 36 }}>{formatTime(masterDuration)}</span>
+                    <span className="time-label">{formatTime(masterDuration)}</span>
                 </div>
             </div>
  
-            <div style={{ marginTop: 20, maxWidth: 700 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                    <h3 style={{ margin: 0 }}>Tracks</h3>
+            <div className="tracks-section">
+                <div className="tracks-header">
+                    <h3 className="tracks-title">Tracks</h3>
                     <button onClick={handleAddTrack}>+ Add Track</button>
                 </div>
  
