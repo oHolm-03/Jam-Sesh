@@ -1,0 +1,150 @@
+.track-list-container {
+    display: flex;
+    flex-direction: column;
+    border: 1px solid #222;
+    border-radius: 6px;
+    position: relative;
+}
+
+.track-list-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 5;
+}
+
+.track-lane {
+    position: relative;
+    height: 76px;
+    cursor: pointer;
+    background: var(--lane-color);
+}
+
+/* First/last handled here instead of in JS — no isFirst/isLast booleans needed */
+.track-lane:not(:last-child) {
+    border-bottom: 1px solid rgba(0, 0, 0, 0.3);
+}
+
+.track-lane:first-child {
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+}
+
+.track-lane:last-child {
+    border-bottom-left-radius: 6px;
+    border-bottom-right-radius: 6px;
+}
+
+.track-lane--selected {
+    outline: 2px solid #fff;
+    outline-offset: -2px;
+}
+
+.track-waveform-wrapper {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    border-radius: inherit; /* matches whatever corner rounding the lane itself has */
+}
+
+.track-waveform-svg {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+}
+
+.track-empty-label {
+    position: absolute;
+    bottom: 8px;
+    left: 8px;
+    color: rgba(255, 255, 255, 0.75);
+    font-size: 12px;
+}
+
+.track-effects-badge {
+    position: absolute;
+    bottom: 8px;
+    right: 8px;
+    font-size: 10px;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.35);
+    border-radius: 4px;
+    padding: 2px 6px;
+}
+
+.track-muted-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.45);
+    pointer-events: none;
+}
+
+.track-header {
+    position: absolute;
+    top: 4px;
+    left: 8px;
+    right: 8px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.track-name-group {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.track-name {
+    color: #fff;
+    font-size: 12px;
+    font-weight: bold;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.track-muted-badge {
+    font-size: 10px;
+    color: #fff;
+    background: rgba(0, 0, 0, 0.55);
+    border-radius: 4px;
+    padding: 2px 6px;
+}
+
+.track-settings-button {
+    font-size: 12px;
+    padding: 2px 6px;
+}
+
+.track-menu {
+    position: absolute;
+    top: 28px;
+    right: 8px;
+    background: #fff;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    padding: 12px;
+    min-width: 200px;
+    z-index: 10;
+}
+
+/* Last track's menu opens upward instead of down, so it doesn't need to spill
+   past the bottom of the list — handled here instead of an isLast check in JS */
+.track-lane:last-child .track-menu {
+    top: auto;
+    bottom: 28px;
+}
+
+.track-menu-rename-row {
+    margin-bottom: 10px;
+}
+
+.track-menu-action {
+    display: block;
+    width: 100%;
+}
+
+.track-menu-action--spaced {
+    margin-bottom: 10px;
+}

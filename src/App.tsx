@@ -3,21 +3,11 @@ import Auth from './Auth';
 import { supabase } from './supabaseClient';
 import Projects from './Projects';
 import ResetPassword from './ResetPassword';
-import InlineRename from './InlineRename';
- 
-type DistortionNodeSet = {
-    waveshaper: WaveShaperNode;
-    toneFilter: BiquadFilterNode;
-    levelGain: GainNode;
-};
-
-type TrackData = {
-    id: string;
-    name: string;
-    hasRecording: boolean;
-    duration: number;
-    muted: boolean;
-};
+import TrackList, {TrackData} from './Recording-Related/Tracklist';
+import { computeWaveformPeaks } from './Recording-Related/Audioutils';
+import { EFFECT_DEFINITIONS, EFFECT_PROCESSORS, TrackEffectInstance } from './Effects-Related/Effects';
+import EffectsPanel from './Effects-Related/EffectsPanel';
+import './App.css';
 
 type TrackAudioRefs = {
     audioBuffer: AudioBuffer | null;
@@ -49,13 +39,14 @@ const App = () => {
     const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
     const [masterIsPlaying, setMasterIsPlaying] = useState(false);
     const [masterCurrentTime, setMasterCurrentTime] = useState(0);
+    const [isLooping, setIsLooping] = useState(false);
  
     const monitorStreamRef = useRef<MediaStream | null>(null);
     const monitorSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const chunksRef = useRef<Blob[]>([]);
     const audioContextRef = useRef<AudioContext | null>(null);
-    const activeDistortionNodesRef = useRef<DistortionNodeSet[]>([]);
+    const activeEffectNodesRef = useRef<Map<string, (params: Record<string, number>) => void>>(new Map());
     const monitorCleanupRef = useRef<() => void>(() => {/* noop until monitoring starts */});
     const trackAudioRefsRef = useRef<Map<string, TrackAudioRefs>>(new Map());
     const masterPlaybackRef = useRef<MasterPlaybackState>({
@@ -65,16 +56,13 @@ const App = () => {
         isManualStop: false,
         animationFrame: null,
     });
+    const isLoopingRef = useRef(false);
 
     //helpers
     const getTrackAudioRefs = (trackId: string): TrackAudioRefs => {
         let refs = trackAudioRefsRef.current.get(trackId);
         if(!refs){
-            refs = {
-                audioBuffer: null,
-                duration: 0,
-                muteGainNode: null
-            };
+            refs = {audioBuffer: null, duration: 0, muteGainNode: null};
             trackAudioRefsRef.current.set(trackId, refs);
         }
         return refs;
@@ -103,25 +91,19 @@ const App = () => {
         };
         loadDevices();
     }, []);
- 
-    // Push live slider changes onto whatever distortion nodes are currently active
-    useEffect(() => {
-        activeDistortionNodesRef.current.forEach(({ waveshaper, toneFilter, levelGain }) => {
-            waveshaper.curve = makeDistortionCurve(distortionParams.drive);
-            toneFilter.frequency.value = distortionParams.tone;
-            levelGain.gain.value = distortionParams.level;
-        });
-    }, [distortionParams]);
 
-    // push live mute changes onto whatever mute gain nodes are currently active
+    // Push live paraeter changes onto whichever effect chains are currently active
     useEffect(() => {
         tracks.forEach((track) => {
-            const refs = trackAudioRefsRef.current.get(track.id);
-            if(refs?.muteGainNode) {
-                refs.muteGainNode.gain.value = track.muted ? 0:1;
-            }
+            track.effects.forEach((effect) => {
+                const update = activeEffectNodesRef.current.get(`${track.id}:${effect.type}`);
+                if(update) update(effect.params);
+            });
         });
-    }, [tracks]);
+
+        const monitorUpdate = activeEffectNodesRef.current.get('monitor:distortionOn');
+        if(monitorUpdate) monitorUpdate(distortionOn ? distortionParams : {drive: 0, tone: 20000, level: 0});
+    }, [tracks, distortionOn, distortionParams]);
  
     // DEBUG & URL CHECK: Inspect environment on load for password recovery
     useEffect(() => {
@@ -180,6 +162,10 @@ const App = () => {
         };
         fetchProfile();
     }, [session]);
+
+    useEffect(() => {
+        isLoopingRef.current = isLooping;
+    }, [isLooping]);
  
     // load every track for the current project, and each track's latest clip
     useEffect(() => {
@@ -210,6 +196,7 @@ const App = () => {
                 const refs = getTrackAudioRefs(row.id);
                 let hasRecording = false;
                 let duration = 0;
+                let waveformPeaks: TrackData['waveformPeaks'] = null;
 
                 const {data: clips} = await supabase
                     .from('clips')
@@ -230,6 +217,7 @@ const App = () => {
                         refs.duration = decodedBuffer.duration;
                         hasRecording = true;
                         duration = decodedBuffer.duration;
+                        waveformPeaks = computeWaveformPeaks(decodedBuffer);
                     }
                 }
                 loadedTracks.push({
@@ -238,6 +226,8 @@ const App = () => {
                     hasRecording,
                     duration,
                     muted: false,
+                    effects: [],
+                    waveformPeaks,
                 });
             }
             setTracks(loadedTracks);
@@ -260,53 +250,103 @@ const App = () => {
         getTrackAudioRefs(newTrack.id);
         setTracks((prev) => [
             ...prev,
-            { id: newTrack.id, name: newTrack.name, hasRecording: false, duration: 0, muted: false },
+            { id: newTrack.id, name: newTrack.name, hasRecording: false, duration: 0, muted: false, effects: [], waveformPeaks: null },
         ]);
         setSelectedTrackId(newTrack.id);
     };
 
-    const handleToggleMute = (trackId: string) => {
+    const handleRenameTrack = async (trackId: string, newName: string) => {
+    const { error } = await supabase.from('tracks').update({ name: newName }).eq('id', trackId);
+    if (error) {
+        console.error('Failed to rename track:', error);
+        return;
+    }
+    updateTrackState(trackId, { name: newName });
+};
+
+const handleToggleMute = (trackId: string) => {
         setTracks((prev) => prev.map((t) => (t.id === trackId ? {...t, muted: !t.muted} : t)));
     };
+
+const handleDeleteTrack = async (trackId: string) => {
+    const track = tracks.find((t) => t.id === trackId);
+    const confirmed = window.confirm(`Delete "${track?.name ?? 'this track'}"? This will permanently remove its recording.`);
+    if (!confirmed) return;
+
+    // Remove any stored audio files for this track first, so they don't become orphaned in storage
+    const { data: clips } = await supabase
+        .from('clips')
+        .select('storage_path')
+        .eq('track_id', trackId);
+
+    if (clips && clips.length > 0) {
+        await supabase.storage.from('audio-clips').remove(clips.map((c) => c.storage_path));
+    }
+
+    const { error } = await supabase.from('tracks').delete().eq('id', trackId);
+    if (error) {
+        console.error('Failed to delete track:', error);
+        return;
+    }
+
+    trackAudioRefsRef.current.delete(trackId);
+    setTracks((prev) => prev.filter((t) => t.id !== trackId));
+    setSelectedTrackId((prev) => (prev === trackId ? null : prev));
+};
  
-    // Builds (or bypasses) the distortion chain between a source and a destination.
-    // Returns a cleanup function to call when that particular stream stops,
-    // so we stop pushing live parameter updates onto disconnected nodes.
+    /* Adds the effect (with its default params) if the track doesn't have it yet */
+    const handleToggleTrackEffect = (trackId: string, type: string) => {
+        setTracks((prev) => prev.map((t) => {
+            if(t.id !== trackId) return t;
+            const exists = t.effects.some((e) => e.type === type);
+            if(exists){
+                return {...t, effects: t.effects.filter((e) => e.type !== type)};
+            }
+            const definition = EFFECT_DEFINITIONS.find((d) => d.type === type);
+            const defaultParams = definition ? {...definition.defaultParams} : {};
+            return {...t, effects: [...t.effects, {type, params: defaultParams}]};
+        }));
+    };
+
+    const handleUpdateTrackEffectParam = (trackId: string, type: string, key: string, value: number) => {
+        setTracks((prev) => prev.map((t) => {
+            if(t.id !== trackId) return t;
+            return {
+                ...t, effects: t.effects.map((e) => (e.type === type ? {...e, params: {...e.params, [key]: value}} : e)),
+            };
+        }));
+    };
+
+    // Builds a chain of the given effects between a source and a destination, in order
     const connectEffectsChain = (
         audioContext: AudioContext,
         sourceNode: AudioNode,
-        destinationNode: AudioNode
+        destinationNode: AudioNode,
+        effects: TrackEffectInstance[],
+        liveKey: string
     ): (() => void) => {
-        if (!distortionOn) {
-            sourceNode.connect(destinationNode);
-            return () => {/* nothing to clean up */};
-        }
- 
-        const waveshaper = audioContext.createWaveShaper();
-        waveshaper.curve = makeDistortionCurve(distortionParams.drive);
-        waveshaper.oversample = '4x';
- 
-        const toneFilter = audioContext.createBiquadFilter();
-        toneFilter.type = 'lowpass';
-        toneFilter.frequency.value = distortionParams.tone;
- 
-        const levelGain = audioContext.createGain();
-        levelGain.gain.value = distortionParams.level;
- 
-        sourceNode.connect(waveshaper);
-        waveshaper.connect(toneFilter);
-        toneFilter.connect(levelGain);
-        levelGain.connect(destinationNode);
- 
-        const nodeSet: DistortionNodeSet = { waveshaper, toneFilter, levelGain };
-        activeDistortionNodesRef.current.push(nodeSet);
- 
+        let currentNode: AudioNode = sourceNode;
+        const registeredKeys: string[] = [];
+
+        effects.forEach((effect) => {
+            const processor = EFFECT_PROCESSORS[effect.type];
+            if(!processor) return;
+
+            const built = processor.build(audioContext, effect.params);
+            currentNode.connect(built.inputNode);
+            currentNode = built.outputNode;
+
+            const key = `${liveKey}:${effect.type}`;
+            activeEffectNodesRef.current.set(key, built.update);
+            registeredKeys.push(key);
+        });
+        currentNode.connect(destinationNode);
+
         return () => {
-            activeDistortionNodesRef.current = activeDistortionNodesRef.current.filter(
-                (n) => n !== nodeSet
-            );
+            registeredKeys.forEach((key) => activeEffectNodesRef.current.delete(key));
         };
     };
+       
  
     const startMonitoring = async () => {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -321,11 +361,16 @@ const App = () => {
             audioContextRef.current = new AudioContext({ latencyHint: 'interactive' });
         }
         const source = audioContextRef.current.createMediaStreamSource(stream);
+
+        const monitorEffects: TrackEffectInstance[] = distortionOn
+            ? [{type: 'distortion', params: distortionParams}] : [];
  
         monitorCleanupRef.current = connectEffectsChain(
             audioContextRef.current,
             source,
-            audioContextRef.current.destination
+            audioContextRef.current.destination,
+            monitorEffects,
+            'monitor'
         );
  
         monitorStreamRef.current = stream;
@@ -371,7 +416,7 @@ const App = () => {
             refs.audioBuffer = decodedBuffer;
             refs.duration = decodedBuffer.duration;
 
-            updateTrackState(trackId, {hasRecording: true, duration: decodedBuffer.duration});
+            updateTrackState(trackId, {hasRecording: true, duration: decodedBuffer.duration, waveformPeaks: computeWaveformPeaks(decodedBuffer),});
             stream.getTracks().forEach((track) => track.stop());
 
             const { data: userData } = await supabase.auth.getUser();
@@ -401,16 +446,6 @@ const App = () => {
     const stopRecording = () => {
         mediaRecorderRef.current?.stop();
         setIsRecording(false);
-    };
- 
-    const makeDistortionCurve = (amount: number) => {
-        const samples = 44100;
-        const curve = new Float32Array(samples);
-        for (let i = 0; i < samples; i++) {
-            const x = (i * 2) / samples - 1;
-            curve[i] = ((3 + amount) * x * 20 * (Math.PI / 180)) / (Math.PI + amount * Math.abs(x));
-        }
-        return curve;
     };
  
     // Core playback function
@@ -455,20 +490,24 @@ const App = () => {
             muteGain.gain.value = track.muted ? 0:1;
             refs.muteGainNode = muteGain;
 
-            const cleanupDistortion = connectEffectsChain(audioContextRef.current!, source, muteGain);
+            const cleanupEffects = connectEffectsChain(audioContextRef.current!, source, muteGain, track.effects, track.id);
             muteGain.connect(audioContextRef.current!.destination);
 
             source.onended = () => {
-                cleanupDistortion();
-                remainingToEnd -= 1;
-                if(master.isManualStop) return;
-                if(remainingToEnd <= 0){
+            cleanupEffects();
+            remainingToEnd -= 1;
+            if (master.isManualStop) return;
+            if (remainingToEnd <= 0) {
+                if (master.animationFrame) cancelAnimationFrame(master.animationFrame);
+                if (isLoopingRef.current) {
+                    startMasterPlaybackFrom(0); 
+                } else {
                     setMasterIsPlaying(false);
                     setMasterCurrentTime(0);
                     master.playbackOffset = 0;
-                    if(master.animationFrame) cancelAnimationFrame(master.animationFrame);
                 }
-            };
+            }
+        };
             source.start(0, offset);
             master.activeSources.push(source);
         });
@@ -513,9 +552,10 @@ const App = () => {
         setMasterCurrentTime(masterDuration);
         setMasterIsPlaying(false);
     };
- 
-    //temporary
-    const iconButtonStyle: React.CSSProperties = {};
+
+    const handleToggleLoop = () => {
+        setIsLooping((prev) => !prev);
+    };
  
     // 1. Intercept render tree to show password recovery page first
     if (isPasswordRecovery) {
@@ -539,21 +579,22 @@ const App = () => {
     if (!currentProjectId) {
         return (
             <div>
-                {username && <p style={{ padding: '20px 40px 0' }}>Welcome, {username}!</p>}
+                {username && <p className="welcome-message">Welcome, {username}!</p>}
                 <Projects onSelectProject={setCurrentProjectId} />
             </div>
         );
     }
 
     const masterDuration = getMasterDuration();
+    const selectedTrack = tracks.find((t) => t.id === selectedTrackId) ?? null;
  
     // 4. Default main dashboard
     return (
-        <div style={{ padding: 40, fontFamily: 'sans-serif' }}>
+        <div className="app-container">
             <button onClick={() => setCurrentProjectId(null)}>← Back to Projects</button>
-            <h1>Jam App — Record/Playback Prototype</h1>
+            <h1>Jam-Sesh Recording Studio</h1>
  
-            <div style={{ marginBottom: 20 }}>
+            <div className="device-select-row">
                 <label>Input device: </label>
                 <select value={selectedDeviceId} onChange={(e) => setSelectedDeviceId(e.target.value)}>
                     {devices.map((device) => (
@@ -564,23 +605,23 @@ const App = () => {
                 </select>
             </div>
  
-            <div style={{ marginBottom: 20 }}>
+            <div className="monitoring-controls">
                 {!isMonitoring ? (
                     <button onClick={startMonitoring}>Start Monitoring</button>
                 ) : (
                     <button onClick={stopMonitoring}>Stop Monitoring</button>
                 )}
-                <label style={{ marginLeft: 10 }}>
+                <label className="distortion-toggle-label">
                     <input
                         type="checkbox"
                         checked={distortionOn}
                         onChange={(e) => setDistortionOn(e.target.checked)}
                     />
-                    Distortion
+                    Distortion (for monitoring)
                 </label>
  
                 {distortionOn && (
-                    <div style={{ display: 'flex', gap: 20, marginTop: 10 }}>
+                    <div className="distortion-sliders">
                         <label>
                             Drive
                             <input
@@ -615,28 +656,16 @@ const App = () => {
                     </div>
                 )}
             </div>
-
-            <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
-                {!isRecording ? (
-                    <button onClick={startRecording} disabled={!selectedTrackId}>Start Recording</button>
-                ) : (
-                    <button onClick={stopRecording}>Stop Recording</button>
-                )}
-                {!selectedTrackId && (
-                    <span style={{ fontSize: 13, color: '#888' }}>Select a track below to record onto it</span>
-                )}
-            </div>
  
-            <div style={{ marginBottom: 20, maxWidth: 500, border: '1px solid #ccc', borderRadius: 6, padding: 16 }}>
-                <div style={{ fontWeight: 'bold', marginBottom: 8 }}>Playback</div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
-                    <button onClick={handleMasterRestart} style={iconButtonStyle} aria-label="Restart">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
-                        </svg>
+            {/* Master transport — controls every track in sync */}
+            <div className="master-transport">
+                <div className="master-transport-title">Playback</div>
+                <div className="transport-buttons">
+                    <button onClick={handleMasterRestart} className="icon-button" aria-label="Restart">
+                        ⏮️   
                     </button>
  
-                    <button onClick={handleMasterPlayPause} style={iconButtonStyle} aria-label={masterIsPlaying ? 'Pause' : 'Play'}>
+                    <button onClick={handleMasterPlayPause} className="icon-button" aria-label={masterIsPlaying ? 'Pause' : 'Play'}>
                         {masterIsPlaying ? (
                             <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
                                 <rect x="6" y="5" width="4" height="14" />
@@ -649,83 +678,68 @@ const App = () => {
                         )}
                     </button>
  
-                    <button onClick={handleMasterSkipToEnd} style={iconButtonStyle} aria-label="Skip to end">
+                    <button onClick={handleMasterSkipToEnd} className="icon-button" aria-label="Skip to end">
+                        ⏭️
+                    </button>
+
+                    <button
+                        onClick={handleToggleLoop}
+                        aria-label={isLooping ? 'Disable loop' : 'Enable loop'}
+                        className="icon-button"
+                        style={{ opacity: isLooping ? 1 : 0.5 }}
+                    >
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                            <polygon points="5,4 15,12 5,20" />
-                            <rect x="17" y="4" width="3" height="16" />
+                            <path d="M17 1l4 4-4 4V6H7c-1.1 0-2 .9-2 2v3H3V8c0-2.21 1.79-4 4-4h10V1zM7 23l-4-4 4-4v3h10c1.1 0 2-.9 2-2v-3h2v3c0 2.21-1.79 4-4 4H7v3z"/>
                         </svg>
                     </button>
+
+                    <div>
+                    {!isRecording ? (
+                        <button onClick={startRecording} disabled={!selectedTrackId}>🔴</button>
+                    ) : (
+                        <button onClick={stopRecording}>🟥</button>
+                    )}
+                    </div>
                 </div>
- 
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <span style={{ fontSize: 12, minWidth: 36 }}>{formatTime(masterCurrentTime)}</span>
-                    <div style={{ flex: 1, height: 6, background: '#ddd', borderRadius: 3, position: 'relative' }}>
+
+                <div className="progress-row">
+                    <span className="time-label">{formatTime(masterCurrentTime)}</span>
+                    <div className="progress-track">
                         <div
-                            style={{
-                                position: 'absolute',
-                                left: 0,
-                                top: 0,
-                                height: '100%',
-                                width: `${masterDuration ? (masterCurrentTime / masterDuration) * 100 : 0}%`,
-                                background: '#333',
-                                borderRadius: 3,
-                            }}
+                            className="progress-fill"
+                            style={{ width: `${masterDuration ? (masterCurrentTime / masterDuration) * 100 : 0}%` }}
                         />
                     </div>
-                    <span style={{ fontSize: 12, minWidth: 36 }}>{formatTime(masterDuration)}</span>
+                    <span className="time-label">{formatTime(masterDuration)}</span>
                 </div>
             </div>
  
-            <div style={{ marginTop: 20, maxWidth: 500 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
-                    <h3 style={{ margin: 0 }}>Tracks</h3>
+            <div className="tracks-section">
+                <div className="tracks-header">
+                    <h3 className="tracks-title">Tracks</h3>
                     <button onClick={handleAddTrack}>+ Add Track</button>
                 </div>
  
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {tracks.map((track) => (
-                        <div
-                            key={track.id}
-                            onClick={() => setSelectedTrackId(track.id)}
-                            style={{
-                                border: track.id === selectedTrackId ? '2px solid #333' : '1px solid #ccc',
-                                borderRadius: 6,
-                                padding: 16,
-                                cursor: 'pointer',
-                                background: track.id === selectedTrackId ? '#f5f5f5' : '#fff',
-                                opacity: track.muted ? 0.5 : 1,
-                            }}
-                        >
-                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-                                <InlineRename
-                                    value={track.name}
-                                    label="Rename track"
-                                    onSave={async (newName) => {
-                                        const { error } = await supabase.from('tracks').update({ name: newName }).eq('id', track.id);
-                                        if (error) {
-                                            console.error('Failed to rename track:', error);
-                                            return;
-                                        }
-                                        updateTrackState(track.id, { name: newName });
-                                    }}
-                                />
-                                <button
-                                    onClick={(e) => { e.stopPropagation(); handleToggleMute(track.id); }}
-                                    aria-label={track.muted ? 'Unmute track' : 'Mute track'}
-                                >
-                                    {track.muted ? 'Unmute' : 'Mute'}
-                                </button>
-                            </div>
- 
-                            {track.hasRecording ? (
-                                <div style={{ fontSize: 13, color: '#888' }}>{formatTime(track.duration)}</div>
-                            ) : (
-                                <div style={{ fontSize: 13, color: '#888' }}>No recording yet</div>
-                            )}
-                        </div>
-                    ))}
-                </div>
+                <TrackList
+                    tracks={tracks}
+                    selectedTrackId={selectedTrackId}
+                    onSelectTrack={setSelectedTrackId}
+                    onToggleMute={handleToggleMute}
+                    onRenameTrack={handleRenameTrack}
+                    onDeleteTrack={handleDeleteTrack}
+                />
             </div>
+
+            {selectedTrack && (
+                <EffectsPanel
+                    key={selectedTrack.id}
+                    track={selectedTrack}
+                    onToggleEffect={(type) => handleToggleTrackEffect(selectedTrack.id, type)}
+                    onUpdateEffectParam={(type, key, value) => handleUpdateTrackEffectParam(selectedTrack.id, type, key, value)}
+                    onClose={() => setSelectedTrackId(null)}
+                />
+            )}
+
         </div>
     );
 };
