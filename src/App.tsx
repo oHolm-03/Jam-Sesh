@@ -44,6 +44,7 @@ const App = () => {
     const [selectedTrackId, setSelectedTrackId] = useState<string | null>(null);
     const [masterIsPlaying, setMasterIsPlaying] = useState(false);
     const [masterCurrentTime, setMasterCurrentTime] = useState(0);
+    const [isLooping, setIsLooping] = useState(false);
  
     const monitorStreamRef = useRef<MediaStream | null>(null);
     const monitorSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
@@ -60,6 +61,7 @@ const App = () => {
         isManualStop: false,
         animationFrame: null,
     });
+    const isLoopingRef = useRef(false);
 
     //helpers
     const getTrackAudioRefs = (trackId: string): TrackAudioRefs => {
@@ -178,6 +180,10 @@ const App = () => {
         };
         fetchProfile();
     }, [session]);
+
+    useEffect(() => {
+        isLoopingRef.current = isLooping;
+    }, [isLooping]);
  
     // load every track for the current project, and each track's latest clip
     useEffect(() => {
@@ -517,16 +523,20 @@ const handleDeleteTrack = async (trackId: string) => {
             muteGain.connect(audioContextRef.current!.destination);
 
             source.onended = () => {
-                cleanupEffects();
-                remainingToEnd -= 1;
-                if(master.isManualStop) return;
-                if(remainingToEnd <= 0){
+            cleanupEffects();
+            remainingToEnd -= 1;
+            if (master.isManualStop) return;
+            if (remainingToEnd <= 0) {
+                if (master.animationFrame) cancelAnimationFrame(master.animationFrame);
+                if (isLoopingRef.current) {
+                    startMasterPlaybackFrom(0);   // loop: go again from the top
+                } else {
                     setMasterIsPlaying(false);
                     setMasterCurrentTime(0);
                     master.playbackOffset = 0;
-                    if(master.animationFrame) cancelAnimationFrame(master.animationFrame);
                 }
-            };
+            }
+        };
             source.start(0, offset);
             master.activeSources.push(source);
         });
@@ -570,6 +580,10 @@ const handleDeleteTrack = async (trackId: string) => {
         masterPlaybackRef.current.playbackOffset = masterDuration;
         setMasterCurrentTime(masterDuration);
         setMasterIsPlaying(false);
+    };
+
+    const handleToggleLoop = () => {
+        setIsLooping((prev) => !prev);
     };
  
     //temporary
@@ -682,9 +696,7 @@ const handleDeleteTrack = async (trackId: string) => {
                 <div style={{ fontWeight: 'bold', marginBottom: 8 }}>Playback</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 8 }}>
                     <button onClick={handleMasterRestart} style={iconButtonStyle} aria-label="Restart">
-                        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                            <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z" />
-                        </svg>
+                        ⏮️   
                     </button>
  
                     <button onClick={handleMasterPlayPause} style={iconButtonStyle} aria-label={masterIsPlaying ? 'Pause' : 'Play'}>
@@ -701,11 +713,19 @@ const handleDeleteTrack = async (trackId: string) => {
                     </button>
  
                     <button onClick={handleMasterSkipToEnd} style={iconButtonStyle} aria-label="Skip to end">
+                        ⏭️
+                    </button>
+
+                    <button
+                        onClick={handleToggleLoop}
+                        aria-label={isLooping ? 'Disable loop' : 'Enable loop'}
+                        style={{ ...iconButtonStyle, opacity: isLooping ? 1 : 0.5 }}
+                    >
                         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-                            <polygon points="5,4 15,12 5,20" />
-                            <rect x="17" y="4" width="3" height="16" />
+                            <path d="M17 1l4 4-4 4V6H7c-1.1 0-2 .9-2 2v3H3V8c0-2.21 1.79-4 4-4h10V1zM7 23l-4-4 4-4v3h10c1.1 0 2-.9 2-2v-3h2v3c0 2.21-1.79 4-4 4H7v3z"/>
                         </svg>
                     </button>
+
                     <div>
                     {!isRecording ? (
                         <button onClick={startRecording} disabled={!selectedTrackId}>🔴</button>
