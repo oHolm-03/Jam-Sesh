@@ -8,6 +8,7 @@ import { computeWaveformPeaks } from './Recording-Related/Audioutils';
 import { EFFECT_DEFINITIONS, EFFECT_PROCESSORS, TrackEffectInstance } from './Effects-Related/Effects';
 import EffectsPanel from './Effects-Related/EffectsPanel';
 import './App.css';
+import './GlobalStyles.css';
 
 type TrackAudioRefs = {
     audioBuffer: AudioBuffer | null;
