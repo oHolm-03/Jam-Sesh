@@ -9,6 +9,7 @@ import { EFFECT_DEFINITIONS, EFFECT_PROCESSORS, TrackEffectInstance } from './Ef
 import EffectsPanel from './Effects-Related/EffectsPanel';
 import './App.css';
 import './GlobalStyles.css';
+import LiveJam from './Live-Jam-Related/LiveJam';
 
 type TrackAudioRefs = {
     audioBuffer: AudioBuffer | null;
@@ -605,6 +606,8 @@ const handleDeleteTrack = async (trackId: string) => {
                     ))}
                 </select>
             </div>
+
+            <LiveJam projectId={currentProjectId} />
  
             <div className="monitoring-controls">
                 {!isMonitoring ? (
