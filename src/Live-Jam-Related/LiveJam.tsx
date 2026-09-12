@@ -89,6 +89,7 @@ const LiveJam = ({ projectId }: { projectId: string }) => {
       // Someone else is already in live-jam and sent an offer, accept it and send back an answer
       channel.on('broadcast', { event: 'offer' }, async ({ payload }: { payload: { offer: RTCSessionDescriptionInit } }) => {
         console.log('✓ Received offer from remote peer');
+        console.log('Offer details:', payload.offer);
         await pc.setRemoteDescription(new RTCSessionDescription(payload.offer));
         console.log('✓ Set remote description (offer)');
         const answer = await pc.createAnswer();
@@ -101,6 +102,7 @@ const LiveJam = ({ projectId }: { projectId: string }) => {
 
       channel.on('broadcast', { event: 'answer' }, async ({ payload }: { payload: { answer: RTCSessionDescriptionInit } }) => {
         console.log('✓ Received answer from remote peer');
+        console.log('Answer details:', payload.answer);
         await pc.setRemoteDescription(new RTCSessionDescription(payload.answer));
         console.log('✓ Set remote description (answer)');
       });
