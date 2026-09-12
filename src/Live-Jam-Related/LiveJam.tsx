@@ -63,15 +63,28 @@ const LiveJam = ({ projectId }: { projectId: string }) => {
         }
       };
 
-    //   pc.onerror = (error) => {
-    //     console.error('✗ Peer connection error:', error);
-    //   };
+      // pc.onerror = (error) => {
+      //   console.error('✗ Peer connection error:', error);
+      // };
 
       // One shared channel per project
       // Only carries small JSON payloads, never audio
       const channel = supabase.channel(`live-jam-${projectId}`);
       console.log('✓ Created Supabase channel:', `live-jam-${projectId}`);
       channelRef.current = channel;
+
+      // Add the presence listener BEFORE subscribing
+      channel.on('presence', { event: 'join' }, async ({ key, newPresences }) => {
+        console.log('✓ Other peer joined! Presence key:', key);
+        console.log('Initiating offer...');
+        
+        const offer = await pc.createOffer();
+        console.log('✓ Created offer');
+        await pc.setLocalDescription(offer);
+        console.log('✓ Set local description (offer)');
+        channel.send({ type: 'broadcast', event: 'offer', payload: { offer } });
+        console.log('✓ Sent offer to remote peer');
+      });
 
       // Someone else is already in live-jam and sent an offer, accept it and send back an answer
       channel.on('broadcast', { event: 'offer' }, async ({ payload }: { payload: { offer: RTCSessionDescriptionInit } }) => {
@@ -102,33 +115,15 @@ const LiveJam = ({ projectId }: { projectId: string }) => {
         }
       });
 
+      // NOW subscribe, after all listeners are registered
       channel.subscribe(async (subStatus: string) => {
         console.log('Channel subscription status:', subStatus);
         if (subStatus !== 'SUBSCRIBED') return;
 
         console.log('✓ Channel subscribed successfully');
-        // Presence tells us who else is already connected to the channel, and how we decide who initiates connection
-        const presenceState = channel.presenceState();
-        const alreadyHere = Object.keys(presenceState).length > 0;
-        console.log('Presence state:', presenceState);
-        console.log('Already here (other peers connected):', alreadyHere);
 
         await channel.track({ joinedAt: Date.now() });
         console.log('✓ Tracked own presence');
-
-        if (alreadyHere) {
-          // Send 2nd person's answer
-          console.log('→ Another peer already here, initiating offer...');
-          const offer = await pc.createOffer();
-          console.log('✓ Created offer');
-          await pc.setLocalDescription(offer);
-          console.log('✓ Set local description (offer)');
-          channel.send({ type: 'broadcast', event: 'offer', payload: { offer } });
-          console.log('✓ Sent offer to remote peer');
-        } else {
-          // First person to arrive just waits. Whoever joins next will see first person
-          console.log('→ First peer here, waiting for another to join...');
-        }
       });
     } catch (err) {
       console.error('✗ Error starting session:', err);
