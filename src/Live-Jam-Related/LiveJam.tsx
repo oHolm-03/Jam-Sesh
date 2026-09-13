@@ -15,6 +15,7 @@ const LiveJam = ({ projectId }: { projectId: string }) => {
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
+  const offerSentRef = useRef(false);
 
   const startSession = async () => {
     setStatus('Connecting...');
@@ -76,14 +77,27 @@ const LiveJam = ({ projectId }: { projectId: string }) => {
       // Add the presence listener BEFORE subscribing
       channel.on('presence', { event: 'join' }, async ({ key, newPresences }) => {
         console.log('✓ Other peer joined! Presence key:', key);
+
+        // Only create offer if we haven't already
+        if (offerSentRef.current) {
+          console.log('→ Offer already sent, waiting for answer...');
+          return;
+        }
+
         console.log('Initiating offer...');
-        
-        const offer = await pc.createOffer();
-        console.log('✓ Created offer');
-        await pc.setLocalDescription(offer);
-        console.log('✓ Set local description (offer)');
-        channel.send({ type: 'broadcast', event: 'offer', payload: { offer } });
-        console.log('✓ Sent offer to remote peer');
+        offerSentRef.current = true;
+
+        try {
+          const offer = await pc.createOffer();
+          console.log('✓ Created offer');
+          await pc.setLocalDescription(offer);
+          console.log('✓ Set local description (offer)');
+          channel.send({ type: 'broadcast', event: 'offer', payload: { offer } });
+          console.log('✓ Sent offer to remote peer');
+        } catch (err) {
+          console.error('Error creating/sending offer:', err);
+          offerSentRef.current = false; // Reset on error
+        }
       });
 
       // Someone else is already in live-jam and sent an offer, accept it and send back an answer
@@ -141,6 +155,7 @@ const LiveJam = ({ projectId }: { projectId: string }) => {
     localStreamRef.current = null;
     channelRef.current?.unsubscribe();
     channelRef.current = null;
+    offerSentRef.current = false;
     setIsConnected(false);
     setStatus('Not connected');
     console.log('✓ Session ended');
