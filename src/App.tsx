@@ -327,6 +327,7 @@ const handleDeleteTrack = async (trackId: string) => {
     ): (() => void) => {
         let currentNode: AudioNode = sourceNode;
         const registeredKeys: string[] = [];
+        const disposeFns: (() => void)[] = [];
 
         effects.forEach((effect) => {
             const processor = EFFECT_PROCESSORS[effect.type];
@@ -339,11 +340,14 @@ const handleDeleteTrack = async (trackId: string) => {
             const key = `${liveKey}:${effect.type}`;
             activeEffectNodesRef.current.set(key, built.update);
             registeredKeys.push(key);
+
+            if(built.dispose) disposeFns.push(built.dispose);
         });
         currentNode.connect(destinationNode);
 
         return () => {
             registeredKeys.forEach((key) => activeEffectNodesRef.current.delete(key));
+            disposeFns.forEach((fn) => fn());
         };
     };
        

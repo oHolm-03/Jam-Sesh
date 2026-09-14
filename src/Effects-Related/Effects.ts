@@ -24,6 +24,7 @@ type BuiltEffect = {
     inputNode: AudioNode;
     outputNode: AudioNode;
     update: (params: Record<string, number>) => void;
+    dispose?: () => void;
 };
 
 type EffectProcessor = {
@@ -105,9 +106,59 @@ const delayProcessor: EffectProcessor = {
     },
 };
 
+const chorusProcessor: EffectProcessor = {
+    build: (audioContext, params) => {
+        const inputNode = audioContext.createGain();
+        const outputNode = audioContext.createGain();
+
+        const dryGain = audioContext.createGain();
+        dryGain.gain.value = 1;
+
+        const delayNode = audioContext.createDelay(0.05);
+        const depthSeconds = params.depth/1000;
+        delayNode.delayTime.value = depthSeconds;
+
+        const lfo = audioContext.createOscillator();
+        lfo.frequency.value = params.rate;
+
+        const lfoGain = audioContext.createGain();
+        lfoGain.gain.value = depthSeconds;
+
+        lfo.connect(lfoGain);
+        lfoGain.connect(delayNode.delayTime);
+        lfo.start();
+
+        const wetGain = audioContext.createGain();
+        wetGain.gain.value = params.mix;
+
+        inputNode.connect(dryGain);
+        dryGain.connect(outputNode);
+
+        inputNode.connect(delayNode);
+        delayNode.connect(wetGain);
+        wetGain.connect(outputNode);
+
+        return {
+            inputNode,
+            outputNode,
+            update: (newParams) => {
+                const newDepthSeconds = newParams.depth/1000;
+                lfo.frequency.value = newParams.rate;
+                lfoGain.gain.value = newDepthSeconds;
+                delayNode.delayTime.value = newDepthSeconds;
+                wetGain.gain.value = newParams.mix;
+            },
+            dispose: () => {
+                lfo.stop();
+            },
+        };
+    },
+};
+
 export const EFFECT_PROCESSORS: Record<string, EffectProcessor> = {
     distortion: distortionProcessor,
     delay: delayProcessor,
+    chorus: chorusProcessor,
 };
 
 export const EFFECT_DEFINITIONS: EffectDefinition[] = [
@@ -130,5 +181,15 @@ export const EFFECT_DEFINITIONS: EffectDefinition[] = [
             {key: 'mix', label: 'Mix', min: 0, max: 1, step: 0.01},
         ],
         defaultParams: {time: 0.3, feedback: 0.35, mix: 0.4},
+    },
+    {
+        type: 'chorus',
+        label: 'Chorus',
+        params: [
+            {key: 'rate', label: 'Rate', min: 0.1, max: 5, step: 0.1},
+            {key: 'depth', label: 'Depth', min: 1, max: 10, step: 0.5},
+            {key: 'mix', label: 'Mix', min: 0, max: 1, step: 0.01},
+        ],
+        defaultParams: {rate: 1.5, depth: 4, mix: 0.5},
     },
 ];
