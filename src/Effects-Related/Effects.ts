@@ -155,10 +155,77 @@ const chorusProcessor: EffectProcessor = {
     },
 };
 
+const phaserProcessor: EffectProcessor = {
+    build: (audioContext, params) => {
+        const inputNode = audioContext.createGain();
+        const outputNode = audioContext.createGain();
+
+        const dryGain = audioContext.createGain();
+        dryGain.gain.value = 1-params.mix;
+
+        const wetGain = audioContext.createGain();
+        wetGain.gain.value = params.mix;
+
+        const feedbackGain = audioContext.createGain();
+        feedbackGain.gain.value = params.feedback;
+
+        const stages = 4;
+        const filters: BiquadFilterNode[] = [];
+        for(let i=0; i<stages; i++){
+            const filter = audioContext.createBiquadFilter();
+            filter.type = 'allpass';
+            filter.frequency.value = params.baseFreq;
+            filters.push(filter);
+        }
+        for(let i=0; i<stages-1; i++){
+            filters[i].connect(filters[i+1]);
+        }
+        const lfo = audioContext.createOscillator();
+        lfo.type = 'sine';
+        lfo.frequency.value = params.rate;
+
+        const lfoGain = audioContext.createGain();
+        lfoGain.gain.value = params.depth;
+        lfo.connect(lfoGain);
+
+        filters.forEach((filter) => {
+            lfoGain.connect(filter.frequency);
+        });
+        lfo.start();
+
+        inputNode.connect(dryGain);
+        dryGain.connect(outputNode);
+
+        inputNode.connect(filters[0]);
+        filters[stages-1].connect(wetGain);
+        wetGain.connect(outputNode);
+
+        filters[stages-1].connect(feedbackGain);
+        feedbackGain.connect(filters[0]);
+
+        return {
+            inputNode,
+            outputNode,
+            update: (newParams) => {
+                lfo.frequency.value = newParams.rate;
+                lfoGain.gain.value = newParams.depth;
+                feedbackGain.gain.value = newParams.feedback;
+                dryGain.gain.value = 1-newParams.mix;
+                wetGain.gain.value = newParams.mix;
+
+                filters.forEach((filter) =>{
+                    filter.frequency.value = newParams.baseFreq;
+                });
+            },
+        };
+    },
+};
+
 export const EFFECT_PROCESSORS: Record<string, EffectProcessor> = {
     distortion: distortionProcessor,
     delay: delayProcessor,
     chorus: chorusProcessor,
+    phaser: phaserProcessor,
 };
 
 export const EFFECT_DEFINITIONS: EffectDefinition[] = [
@@ -191,5 +258,17 @@ export const EFFECT_DEFINITIONS: EffectDefinition[] = [
             {key: 'mix', label: 'Mix', min: 0, max: 1, step: 0.01},
         ],
         defaultParams: {rate: 1.5, depth: 4, mix: 0.5},
+    },
+    {
+        type: 'phaser',
+        label: 'Phaser',
+        params: [
+            {key: 'rate', label: 'Speed (Hz)', min: 0.1, max: 10, step: 0.1},
+            {key: 'depth', label: 'Depth', min: 50, max: 2000, step: 10},
+            {key: 'baseFreq', label: 'Base Freq (Hz)', min: 100, max: 4000, step: 50},
+            {key: 'feedback', label: 'Feedback', min: 0, max: 0.85, step: 0.05},
+            {key: 'mix', label: 'Mix', min: 0, max: 1, step: 0.01},
+        ],
+        defaultParams: {rate: 0.5, depth: 1000, baseFreq: 800, feedback: 0.4, mix: 0.5},
     },
 ];
