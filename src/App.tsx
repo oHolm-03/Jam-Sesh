@@ -302,19 +302,6 @@ const handleDeleteTrack = async (trackId: string) => {
     setSelectedTrackId((prev) => (prev === trackId ? null : prev));
 };
  
-    /* Adds the effect (with its default params) if the track doesn't have it yet */
-    // const handleToggleTrackEffect = (trackId: string, type: string) => {
-    //     setTracks((prev) => prev.map((t) => {
-    //         if(t.id !== trackId) return t;
-    //         const exists = t.effects.some((e) => e.type === type);
-    //         if(exists){
-    //             return {...t, effects: t.effects.filter((e) => e.type !== type)};
-    //         }
-    //         const definition = EFFECT_DEFINITIONS.find((d) => d.type === type);
-    //         const defaultParams = definition ? {...definition.defaultParams} : {};
-    //         return {...t, effects: [...t.effects, {type, params: defaultParams}]};
-    //     }))
-    // };
     const handleToggleTrackEffect = (trackId: string, type: string) => {
         const track = tracks.find((t) => t.id === trackId);
         if (!track) return;
@@ -328,14 +315,6 @@ const handleDeleteTrack = async (trackId: string) => {
         saveTrackEffects(trackId, updatedEffects);   // ADD
     };
 
-    // const handleUpdateTrackEffectParam = (trackId: string, type: string, key: string, value: number) => {
-    //     setTracks((prev) => prev.map((t) => {
-    //         if(t.id !== trackId) return t;
-    //         return {
-    //             ...t, effects: t.effects.map((e) => (e.type === type ? {...e, params: {...e.params, [key]: value}} : e)),
-    //         };
-    //     }));
-    // };
     const handleUpdateTrackEffectParam = (trackId: string, type: string, key: string, value: number) => {
         const track = tracks.find((t) => t.id === trackId);
         if (!track) return;
@@ -346,8 +325,7 @@ const handleDeleteTrack = async (trackId: string) => {
 
         setTracks((prev) => prev.map((t) => (t.id === trackId ? { ...t, effects: updatedEffects } : t)));
 
-        // Debounce: only save 500ms after the last change, so a slider drag
-        // doesn't fire a save per tick — just once, shortly after you let go.
+        // Debounce: only save 500ms after the last change, so a slider drag doesn't fire a save per tick
         const existingTimeout = effectsSaveTimeoutRef.current.get(trackId);
         if (existingTimeout) clearTimeout(existingTimeout);
 
