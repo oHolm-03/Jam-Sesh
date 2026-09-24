@@ -8,6 +8,7 @@ import { computeWaveformPeaks } from './Recording-Related/Audioutils';
 import { EFFECT_DEFINITIONS, EFFECT_PROCESSORS, TrackEffectInstance } from './Effects-Related/Effects';
 import EffectsPanel from './Effects-Related/EffectsPanel';
 import './App.css';
+import { DocumentSidebar } from './Documents-Related/Documents';
 
 type TrackAudioRefs = {
     audioBuffer: AudioBuffer | null;
@@ -40,6 +41,7 @@ const App = () => {
     const [masterIsPlaying, setMasterIsPlaying] = useState(false);
     const [masterCurrentTime, setMasterCurrentTime] = useState(0);
     const [isLooping, setIsLooping] = useState(false);
+    const [isNotesOpen, setIsNotesOpen] = useState(false);
  
     const monitorStreamRef = useRef<MediaStream | null>(null);
     const monitorSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
@@ -628,7 +630,36 @@ const handleDeleteTrack = async (trackId: string) => {
                     ))}
                 </select>
             </div>
+
+            {/* Button to toggle the Notepad Sidebar */}
+            <button 
+                onClick={() => setIsNotesOpen((prev) => !prev)}
+                style={{
+                    position: 'fixed',
+                    top: '20px',
+                    right: '20px',
+                    zIndex: 1000,
+                    padding: '10px 16px',
+                    backgroundColor: 'red',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                }}
+            >
+                {isNotesOpen ? 'Close Notes' : '📝 Open Notes'}
+            </button>
+
+            {/* Embedded Document Sidebar Component */}
+            <DocumentSidebar
+                projectId={currentProjectId}
+                isOpen={isNotesOpen}
+                onToggle={() => setIsNotesOpen(!isNotesOpen)}
+            />
+        
  
+
+
             <div className="monitoring-controls">
                 {!isMonitoring ? (
                     <button onClick={startMonitoring}>Start Monitoring</button>
