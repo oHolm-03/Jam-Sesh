@@ -7,6 +7,9 @@ type Project = {
     name: string;
     created_at: string;
     created_by: string;
+    description?: string;
+    owner_id?: string;
+    invited_users?: string[];
 }
 
 const Projects = ({ onSelectProject }: { onSelectProject: (id: string) => void }) => {
@@ -17,6 +20,7 @@ const Projects = ({ onSelectProject }: { onSelectProject: (id: string) => void }
     const [inviteStatus, setInviteStatus] = useState<Record<string, string>>({});
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
     const [openMenuProjectId, setOpenMenuProjectId] = useState<string | null>(null);
+    const [loading, setLoading] = useState<boolean>(false);
 
     const fetchProjects = async () => {
         //only returning rows where user is actually a project member
@@ -101,6 +105,60 @@ const Projects = ({ onSelectProject }: { onSelectProject: (id: string) => void }
             setInviteUsername((prev) => ({ ...prev, [projectId]: '' }));
         }
     }
+
+    const handleMakeCopy = async (projectToCopy: Project) => {
+        setLoading(true);
+        setErrorMsg('');
+
+        try{
+            const {data: {user}} = await supabase.auth.getUser();
+            if(!user){
+                console.error('User not authenticated');
+                return;
+            }
+            // const newProjectPayload = {
+            //     name: `${projectToCopy.name} (Copy)`,
+            //     description: projectToCopy.description || '',
+            //     owner_id: user.id,
+            //     invited_users: [],
+            //     created_at: new Date().toISOString(),
+            //     updated_at: new Date().toISOString(),
+            // };
+            const {data: newProject, error: createError} = await supabase
+                .from('projects')
+                .insert({name: `${projectToCopy.name} (Copy)`, created_by: user.id,})
+                .select()
+                .single();
+            if(createError || !newProject) throw createError;
+            // Optional: copy over project notes
+            // const { data: docData } = await supabase
+            //     .from('documents')
+            //     .select('content')
+            //     .eq('project_id', projectToCopy.id)
+            //     .maybeSingle();
+
+            // if (docData && newProject) {
+            //     await supabase.from('documents').insert({
+            //     project_id: newProject.id,
+            //     content: docData.content,
+            //     updated_at: new Date().toISOString(),
+            //     });
+            // }
+
+            const {error: memberError} = await supabase
+                .from('project_members')
+                .insert({project_id: newProject.id, user_id: user.id});
+            if(memberError) throw memberError;
+            setProjects((prev) => [newProject, ...prev]);
+            setOpenMenuProjectId(null);
+            
+        } catch(err){
+            console.error('Failed to copy project:', err);
+            //setErrorMsg(err?.message || 'Failed to copy project');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const deleteProject = async (projectId: string, projectName: string) => {
         const confirmed = window.confirm(`Delete "${projectName}"? This will permanently remove it and all its recordings for everyone.`);
@@ -195,6 +253,13 @@ const Projects = ({ onSelectProject }: { onSelectProject: (id: string) => void }
                                 <div style={{ fontSize: 12, marginTop: 4 }}>{inviteStatus[project.id]}</div>
                             )}
                         </div>
+
+                        <button 
+                            className="dropdown-item" 
+                            onClick={() => handleMakeCopy(project)}
+                            >
+                            Make a copy
+                        </button>
  
                         {project.created_by === currentUserId && (
                             <button onClick={() => deleteProject(project.id, project.name)}>Delete Project</button>
