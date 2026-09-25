@@ -113,37 +113,32 @@ const Projects = ({ onSelectProject }: { onSelectProject: (id: string) => void }
         try{
             const {data: {user}} = await supabase.auth.getUser();
             if(!user){
-                console.error('User not authenticated');
-                return;
+                throw new Error('User not authenticated');
             }
-            // const newProjectPayload = {
-            //     name: `${projectToCopy.name} (Copy)`,
-            //     description: projectToCopy.description || '',
-            //     owner_id: user.id,
-            //     invited_users: [],
-            //     created_at: new Date().toISOString(),
-            //     updated_at: new Date().toISOString(),
-            // };
+            // create the new project
             const {data: newProject, error: createError} = await supabase
                 .from('projects')
                 .insert({name: `${projectToCopy.name} (Copy)`, created_by: user.id,})
                 .select()
                 .single();
             if(createError || !newProject) throw createError;
-            // Optional: copy over project notes
-            // const { data: docData } = await supabase
-            //     .from('documents')
-            //     .select('content')
-            //     .eq('project_id', projectToCopy.id)
-            //     .maybeSingle();
 
-            // if (docData && newProject) {
-            //     await supabase.from('documents').insert({
-            //     project_id: newProject.id,
-            //     content: docData.content,
-            //     updated_at: new Date().toISOString(),
-            //     });
-            // }
+            // copy over project notes
+            const { data: docData } = await supabase
+                .from('documents')
+                .select('title, content')
+                .eq('project_id', projectToCopy.id)
+                .maybeSingle();
+
+            if (docData) { await supabase
+                .from('documents')
+                .insert({
+                    project_id: newProject.id,
+                    title: docData.title,
+                    content: docData.content,
+                    updated_at: new Date().toISOString(),
+                });
+            }
 
             const {error: memberError} = await supabase
                 .from('project_members')
@@ -151,7 +146,94 @@ const Projects = ({ onSelectProject }: { onSelectProject: (id: string) => void }
             if(memberError) throw memberError;
             setProjects((prev) => [newProject, ...prev]);
             setOpenMenuProjectId(null);
-            
+
+            // get all tracks from original project
+            const {data: originalTracks, error: tracksFetchError} = await supabase
+                .from('tracks')
+                .select('id, name, effects')
+                .eq('project_id', projectToCopy.id);
+            if(tracksFetchError){
+                throw tracksFetchError;
+            }
+            // map: original trackId -> new trackId
+            const trackIdMap = new Map<string, string>();
+
+            //copy tracks
+            if(originalTracks && originalTracks.length >0){
+                for(const track of originalTracks){
+                    const{data: newTrack, error: trackInsertError} = await supabase
+                        .from('tracks')
+                        .insert({
+                            project_id: newProject.id,
+                            name: track.name,
+                            effects: track.effects,
+                        })
+                        .select('id')
+                        .single();
+                    if(trackInsertError){
+                        throw trackInsertError;
+                    }
+                    if(!newTrack){
+                        throw new Error(`Failed to copy track "${track.name}"`);
+                    }
+                    trackIdMap.set(track.id, newTrack.id);
+                }
+            }
+
+            // get clips from original tracks
+            const originalTrackIds = originalTracks?.map(track => track.id) ?? [];
+
+            if(originalTrackIds.length >0){
+                const{data: originalClips, error: clipsFetchError} = await supabase
+                    .from('clips')
+                    .select('track_id, uploaded_by, storage_path, file_size_bytes')
+                    .in('track_id', originalTrackIds);
+                if(clipsFetchError){
+                    throw clipsFetchError;
+                }
+
+                // copy clips and point them to the new tracks
+                if(originalClips && originalClips.length > 0){
+                    const newClips = originalClips
+                        .map(clip => {
+                            const newTrackId = trackIdMap.get(clip.track_id);
+                            if(!newTrackId){
+                                return null;
+                            }
+                            return {
+                                track_id: newTrackId,
+                                uploaded_by: user.id,
+                                storage_path: clip.storage_path,
+                                file_size_bytes: clip.file_size_bytes,
+                            };
+                        })
+                        .filter((clip): clip is NonNullable<typeof clip> => clip !== null);
+                    if(newClips.length > 0){
+                        const{error: clipsInsertError} = await supabase 
+                            .from('clips')
+                            .insert(newClips);
+                        if(clipsInsertError){
+                            throw clipsInsertError;
+                        }
+                    }
+                }
+            }
+
+            // add current user as a member
+            const{error: memberError2} = await supabase
+                .from('project_members')
+                .insert({
+                    project_id: newProject.id,
+                    user_id: user.id,
+                });
+            if(memberError2){
+                throw memberError2;
+            }
+
+            //update UI
+            setProjects(prev => [newProject, ...prev]);
+            setOpenMenuProjectId(null);
+
         } catch(err){
             console.error('Failed to copy project:', err);
             //setErrorMsg(err?.message || 'Failed to copy project');
