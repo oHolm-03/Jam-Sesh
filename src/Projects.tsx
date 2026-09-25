@@ -123,6 +123,17 @@ const Projects = ({ onSelectProject }: { onSelectProject: (id: string) => void }
                 .single();
             if(createError || !newProject) throw createError;
 
+            // add current user as a member
+            const{error: memberError} = await supabase
+                .from('project_members')
+                .insert({
+                    project_id: newProject.id,
+                    user_id: user.id,
+                });
+            if(memberError){
+                throw memberError;
+            }
+
             // copy over project notes
             const { data: docData } = await supabase
                 .from('documents')
@@ -139,13 +150,6 @@ const Projects = ({ onSelectProject }: { onSelectProject: (id: string) => void }
                     updated_at: new Date().toISOString(),
                 });
             }
-
-            const {error: memberError} = await supabase
-                .from('project_members')
-                .insert({project_id: newProject.id, user_id: user.id});
-            if(memberError) throw memberError;
-            setProjects((prev) => [newProject, ...prev]);
-            setOpenMenuProjectId(null);
 
             // get all tracks from original project
             const {data: originalTracks, error: tracksFetchError} = await supabase
@@ -217,17 +221,6 @@ const Projects = ({ onSelectProject }: { onSelectProject: (id: string) => void }
                         }
                     }
                 }
-            }
-
-            // add current user as a member
-            const{error: memberError2} = await supabase
-                .from('project_members')
-                .insert({
-                    project_id: newProject.id,
-                    user_id: user.id,
-                });
-            if(memberError2){
-                throw memberError2;
             }
 
             //update UI
