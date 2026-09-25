@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { EFFECT_DEFINITIONS } from './Effects';
 import { TrackData } from '../Recording-Related/Tracklist';
+import './EffectsPanel.css';
 
 type EffectsPanelProps = {
     track: TrackData;
@@ -36,25 +37,11 @@ const EffectsPanel: React.FC<EffectsPanelProps> = ({ track, onToggleEffect, onUp
     };
 
     return (
-        <div
-            style={{
-                position: 'fixed',
-                bottom: 0,
-                left: 0,
-                right: 0,
-                height: 220,
-                background: '#fff',
-                borderTop: '1px solid #ccc',
-                boxShadow: '0 -2px 12px rgba(0,0,0,0.15)',
-                display: 'flex',
-                zIndex: 20,
-                fontFamily: 'sans-serif',
-            }}
-        >
+        <div className="effects-panel-container">
             {/* Left: effect list */}
-            <div style={{ width: 220, borderRight: '1px solid #ddd', padding: 16, overflowY: 'auto' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-                    <strong style={{ fontSize: 14 }}>{track.name}</strong>
+            <div className="effects-sidebar">
+                <div className="effects-sidebar-header">
+                    <strong className="track-title">{track.name}</strong>
                     <button onClick={onClose} aria-label="Close effects panel">✕</button>
                 </div>
 
@@ -66,16 +53,7 @@ const EffectsPanel: React.FC<EffectsPanelProps> = ({ track, onToggleEffect, onUp
                         <div
                             key={def.type}
                             onClick={() => handleRowClick(def.type)}
-                            style={{
-                                display: 'flex',
-                                alignItems: 'center',
-                                gap: 8,
-                                padding: '6px 8px',
-                                borderRadius: 4,
-                                cursor: 'pointer',
-                                background: isSelected ? '#eee' : 'transparent',
-                                marginBottom: 4,
-                            }}
+                            className={`effect-item-row${isSelected ? ' selected' : ''}`}
                         >
                             <input
                                 type="checkbox"
@@ -83,20 +61,20 @@ const EffectsPanel: React.FC<EffectsPanelProps> = ({ track, onToggleEffect, onUp
                                 onClick={(e) => e.stopPropagation()}
                                 onChange={(e) => handleToggleCheckbox(def.type, e.target.checked)}
                             />
-                            <span style={{ fontSize: 13 }}>{def.label}</span>
+                            <span className="effect-label">{def.label}</span>
                         </div>
                     );
                 })}
             </div>
 
             {/* Middle: sliders for whichever effect is selected */}
-            <div style={{ flex: 1, padding: 16 }}>
+            <div className="effects-controls-area">
                 {selectedDefinition && selectedInstance ? (
                     <>
-                        <div style={{ fontWeight: 'bold', marginBottom: 16 }}>{selectedDefinition.label}</div>
-                        <div style={{ display: 'flex', gap: 32 }}>
+                        <div className="selected-effect-title">{selectedDefinition.label}</div>
+                        <div className="sliders-grid">
                             {selectedDefinition.params.map((paramDef) => (
-                                <label key={paramDef.key} style={{ display: 'flex', flexDirection: 'column', fontSize: 12, gap: 4 }}>
+                                <label key={paramDef.key} className="param-slider-label">
                                     {paramDef.label}
                                     <input
                                         type="range"
@@ -111,7 +89,7 @@ const EffectsPanel: React.FC<EffectsPanelProps> = ({ track, onToggleEffect, onUp
                         </div>
                     </>
                 ) : (
-                    <div style={{ color: '#888', fontSize: 13 }}>
+                    <div className="placeholder-text">
                         Select an effect to add it to this track.
                     </div>
                 )}
