@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import InlineRename from './InlineRename';
+import './Projects.css';
 
 type Project = {
     id: string;
     name: string;
     created_at: string;
     created_by: string;
-}
+};
 
 const Projects = ({ onSelectProject }: { onSelectProject: (id: string) => void }) => {
     const [projects, setProjects] = useState<Project[]>([]);
@@ -100,7 +101,7 @@ const Projects = ({ onSelectProject }: { onSelectProject: (id: string) => void }
             setInviteStatus((prev) => ({ ...prev, [projectId]: 'Added!' }));
             setInviteUsername((prev) => ({ ...prev, [projectId]: '' }));
         }
-    }
+    };
 
     const deleteProject = async (projectId: string, projectName: string) => {
         const confirmed = window.confirm(`Delete "${projectName}"? This will permanently remove it and all its recordings for everyone.`);
@@ -117,10 +118,10 @@ const Projects = ({ onSelectProject }: { onSelectProject: (id: string) => void }
     };
 
     return (
-        <div style={{ padding: 40, fontFamily: 'sans-serif' }}>
+        <div className="projects-container">
             <h2>Your Projects</h2>
 
-            <div style={{ marginBottom: 20 }}>
+            <div className="new-project-section">
                 <input
                     type="text"
                     placeholder="New project name"
@@ -130,43 +131,31 @@ const Projects = ({ onSelectProject }: { onSelectProject: (id: string) => void }
                 <button onClick={createProject}>Create Project</button>
             </div>
 
-            {errorMsg && <p style={{ color: 'red' }}>{errorMsg}</p>}
+            {errorMsg && <p className="error-message">{errorMsg}</p>}
 
             {openMenuProjectId && (
                 <div
                     onClick={() => setOpenMenuProjectId(null)}
-                    style={{position: 'fixed', inset: 0, zIndex: 5}}
+                    className="menu-backdrop"
                 />
             )}
 
             <ol>
                 {projects.map((project) => (
-                    <li key={project.id} style={{ marginBottom: 15, position: 'relative' }}>
+                    <li key={project.id} className="project-item">
                         <button onClick={() => onSelectProject(project.id)}>{project.name}</button>
                         <button 
                             onClick={() => setOpenMenuProjectId(openMenuProjectId === project.id ? null : project.id)}
                             aria-label="Project settings"
-                            style={{marginLeft: 8}}
+                            className="menu-trigger-btn"
                             >⋮</button>
 
                         {openMenuProjectId === project.id && (
                     <div
                         onClick={(e) => e.stopPropagation()}
-                        style={{
-                            position: 'absolute',
-                            top: '100%',
-                            left: 0,
-                            marginTop: 4,
-                            background: '#fff',
-                            border: '1px solid #ccc',
-                            borderRadius: 6,
-                            boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
-                            padding: 12,
-                            minWidth: 240,
-                            zIndex: 10,
-                        }}
+                        className="project-menu-dropdown"
                     >
-                        <div style={{ marginBottom: 12 }}>
+                        <div className="menu-section">
                             <InlineRename
                                 value={project.name}
                                 label="Rename project"
@@ -181,7 +170,7 @@ const Projects = ({ onSelectProject }: { onSelectProject: (id: string) => void }
                             />
                         </div>
  
-                        <div style={{ marginBottom: 12 }}>
+                        <div className="menu-section">
                             <input
                                 type="text"
                                 placeholder="Username"
@@ -192,7 +181,7 @@ const Projects = ({ onSelectProject }: { onSelectProject: (id: string) => void }
                             />
                             <button onClick={() => inviteToProject(project.id)}>Invite</button>
                             {inviteStatus[project.id] && (
-                                <div style={{ fontSize: 12, marginTop: 4 }}>{inviteStatus[project.id]}</div>
+                                <div className="invite-status-text">{inviteStatus[project.id]}</div>
                             )}
                         </div>
  

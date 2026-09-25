@@ -8,6 +8,8 @@ import { computeWaveformPeaks } from './Recording-Related/Audioutils';
 import { EFFECT_DEFINITIONS, EFFECT_PROCESSORS, TrackEffectInstance } from './Effects-Related/Effects';
 import EffectsPanel from './Effects-Related/EffectsPanel';
 import './App.css';
+import './GlobalStyles.css';
+import LiveJam from './Live-Jam-Related/LiveJam';
 import { DocumentSidebar } from './Documents-Related/Documents';
 
 type TrackAudioRefs = {
@@ -631,6 +633,7 @@ const handleDeleteTrack = async (trackId: string) => {
                 </select>
             </div>
 
+            <LiveJam projectId={currentProjectId} />
             {/* Button to toggle the Notepad Sidebar */}
             <button 
                 onClick={() => setIsNotesOpen((prev) => !prev)}

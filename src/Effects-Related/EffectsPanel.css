@@ -1,0 +1,79 @@
+.effects-panel-container {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 220px;
+    background-color: var(--bg-surface);
+    color: var(--text-primary);
+    border-top: 1px solid var(--border-color);
+    box-shadow: var(--shadow-md, 0 -2px 12px rgba(0, 0, 0, 0.15));
+    display: flex;
+    z-index: 20;
+    font-family: var(--font-family, sans-serif);
+}
+
+.effects-sidebar {
+    width: 220px;
+    border-right: 1px solid var(--border-color);
+    padding: 16px;
+    overflow-y: auto;
+}
+
+.effects-sidebar-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+}
+
+.track-title {
+    font-size: 14px;
+}
+
+.effect-item-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: var(--radius-sm, 4px);
+    cursor: pointer;
+    background-color: transparent;
+    margin-bottom: 4px;
+}
+
+.effect-item-row.selected {
+    background-color: var(--border-color);
+}
+
+.effect-label {
+    font-size: 13px;
+}
+
+.effects-controls-area {
+    flex: 1;
+    padding: 16px;
+}
+
+.selected-effect-title {
+    font-weight: bold;
+    margin-bottom: 16px;
+}
+
+.sliders-grid {
+    display: flex;
+    gap: 32px;
+}
+
+.param-slider-label {
+    display: flex;
+    flex-direction: column;
+    font-size: 12px;
+    gap: 4px;
+    color: var(--text-primary);
+}
+
+.placeholder-text {
+    color: var(--text-muted, #888);
+    font-size: 13px;
+}
