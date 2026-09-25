@@ -24,6 +24,7 @@ type BuiltEffect = {
     inputNode: AudioNode;
     outputNode: AudioNode;
     update: (params: Record<string, number>) => void;
+    dispose?: () => void;
 };
 
 type EffectProcessor = {
@@ -105,9 +106,234 @@ const delayProcessor: EffectProcessor = {
     },
 };
 
+const createImpulseResponse = (audioContext: AudioContext, duration: number, decay: number): AudioBuffer => {
+    const sampleRate = audioContext.sampleRate;
+    const length = sampleRate * duration;
+    const impulse = audioContext.createBuffer(2, length, sampleRate);
+    const left = impulse.getChannelData(0);
+    const right = impulse.getChannelData(1);
+
+    for(let i=0; i<length; i++){
+        const envelope = Math.pow(1-i / length, decay);
+        left[i] = (Math.random() * 2-1) * envelope;
+        right[i] = (Math.random() * 2-1) * envelope;
+    }
+    return impulse;
+};
+
+const reverbProcessor: EffectProcessor = {
+    build: (audioContext, params) => {
+        const inputNode = audioContext.createGain();
+        const outputNode = audioContext.createGain();
+
+        const dryGain = audioContext.createGain();
+        dryGain.gain.value = 1 - params.mix;
+
+        const convolver = audioContext.createConvolver();
+        convolver.buffer = createImpulseResponse(audioContext, params.decay, 3.0);
+
+        const dampeningFilter = audioContext.createBiquadFilter();
+        dampeningFilter.type = 'lowpass';
+        dampeningFilter.frequency.value = params.dampening;
+
+        const wetGain = audioContext.createGain();
+        wetGain.gain.value = params.mix;
+
+        inputNode.connect(dryGain);
+        dryGain.connect(outputNode);
+
+        inputNode.connect(convolver);
+        convolver.connect(dampeningFilter);
+        dampeningFilter.connect(wetGain);
+        wetGain.connect(outputNode);
+
+        return {
+            inputNode,
+            outputNode,
+            update: (newParams) => {
+                convolver.buffer = createImpulseResponse(audioContext, newParams.decay, 3.0);
+                dampeningFilter.frequency.value = newParams.dampening;
+                dryGain.gain.value = 1 - newParams.mix;
+                wetGain.gain.value = newParams.mix;
+            },
+        };
+    },
+};
+
+const makeOverdriveCurve = (drive: number): Float32Array => {
+    const samples = 44100;
+    const curve = new Float32Array(samples);
+    const k = Math.max(0.1, drive);
+
+    for(let i=0; i<samples; i++){
+        const x=(i*2) / samples-1;
+        curve[i] = Math.tanh(x*(1+k/10));
+    }
+    return curve;
+};
+
+const overdriveProcessor: EffectProcessor = {
+    build: (audioContext, params) => {
+        const inputNode = audioContext.createGain();
+        const outputNode = audioContext.createGain();
+
+        const preFilter = audioContext.createBiquadFilter();
+        preFilter.type = 'highpass';
+        preFilter.frequency.value = 320;
+
+        const waveshaper = audioContext.createWaveShaper();
+        waveshaper.curve = makeOverdriveCurve(params.drive);
+        waveshaper.oversample = '4x';
+
+        const midBoost = audioContext.createBiquadFilter();
+        midBoost.type = 'peaking';
+        midBoost.frequency.value = 1000;
+        midBoost.Q.value = 1.0;
+        midBoost.gain.value = params.tone;
+
+        const levelGain = audioContext.createGain();
+        levelGain.gain.value = params.level;
+
+        inputNode.connect(preFilter);
+        preFilter.connect(waveshaper);
+        waveshaper.connect(midBoost);
+        midBoost.connect(levelGain);
+        levelGain.connect(outputNode);
+
+        return{
+            inputNode,
+            outputNode,
+            update: (newParams) => {
+                waveshaper.curve = makeOverdriveCurve(newParams.drive);
+                midBoost.gain.value = newParams.tone;
+                levelGain.gain.value = newParams.level;
+            },
+        };
+    },
+};
+
+const chorusProcessor: EffectProcessor = {
+    build: (audioContext, params) => {
+        const inputNode = audioContext.createGain();
+        const outputNode = audioContext.createGain();
+
+        const dryGain = audioContext.createGain();
+        dryGain.gain.value = 1;
+
+        const delayNode = audioContext.createDelay(0.05);
+        const depthSeconds = params.depth/1000;
+        delayNode.delayTime.value = depthSeconds;
+
+        const lfo = audioContext.createOscillator();
+        lfo.frequency.value = params.rate;
+
+        const lfoGain = audioContext.createGain();
+        lfoGain.gain.value = depthSeconds;
+
+        lfo.connect(lfoGain);
+        lfoGain.connect(delayNode.delayTime);
+        lfo.start();
+
+        const wetGain = audioContext.createGain();
+        wetGain.gain.value = params.mix;
+
+        inputNode.connect(dryGain);
+        dryGain.connect(outputNode);
+
+        inputNode.connect(delayNode);
+        delayNode.connect(wetGain);
+        wetGain.connect(outputNode);
+
+        return {
+            inputNode,
+            outputNode,
+            update: (newParams) => {
+                const newDepthSeconds = newParams.depth/1000;
+                lfo.frequency.value = newParams.rate;
+                lfoGain.gain.value = newDepthSeconds;
+                delayNode.delayTime.value = newDepthSeconds;
+                wetGain.gain.value = newParams.mix;
+            },
+            dispose: () => {
+                lfo.stop();
+            },
+        };
+    },
+};
+
+const phaserProcessor: EffectProcessor = {
+    build: (audioContext, params) => {
+        const inputNode = audioContext.createGain();
+        const outputNode = audioContext.createGain();
+
+        const dryGain = audioContext.createGain();
+        dryGain.gain.value = 1-params.mix;
+
+        const wetGain = audioContext.createGain();
+        wetGain.gain.value = params.mix;
+
+        const feedbackGain = audioContext.createGain();
+        feedbackGain.gain.value = params.feedback;
+
+        const stages = 4;
+        const filters: BiquadFilterNode[] = [];
+        for(let i=0; i<stages; i++){
+            const filter = audioContext.createBiquadFilter();
+            filter.type = 'allpass';
+            filter.frequency.value = params.baseFreq;
+            filters.push(filter);
+        }
+        for(let i=0; i<stages-1; i++){
+            filters[i].connect(filters[i+1]);
+        }
+        const lfo = audioContext.createOscillator();
+        lfo.type = 'sine';
+        lfo.frequency.value = params.rate;
+
+        const lfoGain = audioContext.createGain();
+        lfoGain.gain.value = params.depth;
+        lfo.connect(lfoGain);
+
+        filters.forEach((filter) => {
+            lfoGain.connect(filter.frequency);
+        });
+        lfo.start();
+
+        inputNode.connect(dryGain);
+        dryGain.connect(outputNode);
+
+        inputNode.connect(filters[0]);
+        filters[stages-1].connect(wetGain);
+        wetGain.connect(outputNode);
+
+        filters[stages-1].connect(feedbackGain);
+        feedbackGain.connect(filters[0]);
+
+        return {
+            inputNode,
+            outputNode,
+            update: (newParams) => {
+                lfo.frequency.value = newParams.rate;
+                lfoGain.gain.value = newParams.depth;
+                feedbackGain.gain.value = newParams.feedback;
+                dryGain.gain.value = 1-newParams.mix;
+                wetGain.gain.value = newParams.mix;
+
+                filters.forEach((filter) =>{
+                    filter.frequency.value = newParams.baseFreq;
+                });
+            },
+        };
+    },
+};
+
 export const EFFECT_PROCESSORS: Record<string, EffectProcessor> = {
     distortion: distortionProcessor,
     delay: delayProcessor,
+    reverb: reverbProcessor,
+    overdrive: overdriveProcessor,
+    chorus: chorusProcessor,
+    phaser: phaserProcessor,
 };
 
 export const EFFECT_DEFINITIONS: EffectDefinition[] = [
@@ -130,5 +356,47 @@ export const EFFECT_DEFINITIONS: EffectDefinition[] = [
             {key: 'mix', label: 'Mix', min: 0, max: 1, step: 0.01},
         ],
         defaultParams: {time: 0.3, feedback: 0.35, mix: 0.4},
+    },
+    {
+        type: 'reverb',
+        label: 'Reverb',
+        params: [
+            {key: 'decay', label: 'Decay (s)', min: 0.5, max: 8, step: 0.1},
+            {key: 'dampening', label: 'Dampening', min: 1000, max: 20000, step: 100},
+            {key: 'mix', label: 'Mix', min: 0, max: 1, step: 0.01},
+        ],
+        defaultParams: {decay: 2.5, dampening: 7000, mix: 0.35},
+    },
+    {
+        type: 'overdrive',
+        label: 'Overdrive',
+        params: [
+            {key: 'drive', label: 'Drive', min: 1, max: 100},
+            {key: 'tone', label: 'Mid Boost', min: -6, max: 12, step: 0.5},
+            {key: 'level', label: 'Level', min: 0, max: 2, step: 0.01},
+        ],
+        defaultParams: {drive: 20, tone: 3, level: 1},
+    },
+    {
+        type: 'chorus',
+        label: 'Chorus',
+        params: [
+            {key: 'rate', label: 'Rate', min: 0.1, max: 5, step: 0.1},
+            {key: 'depth', label: 'Depth', min: 1, max: 10, step: 0.5},
+            {key: 'mix', label: 'Mix', min: 0, max: 1, step: 0.01},
+        ],
+        defaultParams: {rate: 1.5, depth: 4, mix: 0.5},
+    },
+    {
+        type: 'phaser',
+        label: 'Phaser',
+        params: [
+            {key: 'rate', label: 'Speed (Hz)', min: 0.1, max: 10, step: 0.1},
+            {key: 'depth', label: 'Depth', min: 50, max: 2000, step: 10},
+            {key: 'baseFreq', label: 'Base Freq (Hz)', min: 100, max: 4000, step: 50},
+            {key: 'feedback', label: 'Feedback', min: 0, max: 0.85, step: 0.05},
+            {key: 'mix', label: 'Mix', min: 0, max: 1, step: 0.01},
+        ],
+        defaultParams: {rate: 0.5, depth: 1000, baseFreq: 800, feedback: 0.4, mix: 0.5},
     },
 ];

@@ -10,6 +10,7 @@ import EffectsPanel from './Effects-Related/EffectsPanel';
 import './App.css';
 import './GlobalStyles.css';
 import LiveJam from './Live-Jam-Related/LiveJam';
+import { DocumentSidebar } from './Documents-Related/Documents';
 
 type TrackAudioRefs = {
     audioBuffer: AudioBuffer | null;
@@ -42,6 +43,7 @@ const App = () => {
     const [masterIsPlaying, setMasterIsPlaying] = useState(false);
     const [masterCurrentTime, setMasterCurrentTime] = useState(0);
     const [isLooping, setIsLooping] = useState(false);
+    const [isNotesOpen, setIsNotesOpen] = useState(false);
  
     const monitorStreamRef = useRef<MediaStream | null>(null);
     const monitorSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
@@ -59,6 +61,7 @@ const App = () => {
         animationFrame: null,
     });
     const isLoopingRef = useRef(false);
+    const effectsSaveTimeoutRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
     //helpers
     const getTrackAudioRefs = (trackId: string): TrackAudioRefs => {
@@ -182,7 +185,7 @@ const App = () => {
 
             const {data: trackRows, error} = await supabase
                 .from('tracks')
-                .select('id, name')
+                .select('id, name, effects')
                 .eq('project_id', currentProjectId)
                 .order('created_at', {ascending: true});
             
@@ -228,7 +231,7 @@ const App = () => {
                     hasRecording,
                     duration,
                     muted: false,
-                    effects: [],
+                    effects: row.effects ?? [],
                     waveformPeaks,
                 });
             }
@@ -236,6 +239,13 @@ const App = () => {
         };
         loadTracks();
     }, [currentProjectId]);
+
+    const saveTrackEffects = async (trackId: string, effects: TrackEffectInstance[]) => {
+        const {error} = await supabase.from('tracks').update({effects}).eq('id', trackId);
+        if(error){
+            console.error('Failed to save track effects:', error);
+        }
+    }
 
     const handleAddTrack = async () => {
         if(!currentProjectId) return;
@@ -296,27 +306,39 @@ const handleDeleteTrack = async (trackId: string) => {
     setSelectedTrackId((prev) => (prev === trackId ? null : prev));
 };
  
-    /* Adds the effect (with its default params) if the track doesn't have it yet */
     const handleToggleTrackEffect = (trackId: string, type: string) => {
-        setTracks((prev) => prev.map((t) => {
-            if(t.id !== trackId) return t;
-            const exists = t.effects.some((e) => e.type === type);
-            if(exists){
-                return {...t, effects: t.effects.filter((e) => e.type !== type)};
-            }
-            const definition = EFFECT_DEFINITIONS.find((d) => d.type === type);
-            const defaultParams = definition ? {...definition.defaultParams} : {};
-            return {...t, effects: [...t.effects, {type, params: defaultParams}]};
-        }));
+        const track = tracks.find((t) => t.id === trackId);
+        if (!track) return;
+
+        const exists = track.effects.some((e) => e.type === type);
+        const updatedEffects = exists
+            ? track.effects.filter((e) => e.type !== type)
+            : [...track.effects, { type, params: { ...(EFFECT_DEFINITIONS.find((d) => d.type === type)?.defaultParams ?? {}) } }];
+
+        setTracks((prev) => prev.map((t) => (t.id === trackId ? { ...t, effects: updatedEffects } : t)));
+        saveTrackEffects(trackId, updatedEffects);   // ADD
     };
 
     const handleUpdateTrackEffectParam = (trackId: string, type: string, key: string, value: number) => {
-        setTracks((prev) => prev.map((t) => {
-            if(t.id !== trackId) return t;
-            return {
-                ...t, effects: t.effects.map((e) => (e.type === type ? {...e, params: {...e.params, [key]: value}} : e)),
-            };
-        }));
+        const track = tracks.find((t) => t.id === trackId);
+        if (!track) return;
+
+        const updatedEffects = track.effects.map((e) =>
+            e.type === type ? { ...e, params: { ...e.params, [key]: value } } : e
+        );
+
+        setTracks((prev) => prev.map((t) => (t.id === trackId ? { ...t, effects: updatedEffects } : t)));
+
+        // Debounce: only save 500ms after the last change, so a slider drag doesn't fire a save per tick
+        const existingTimeout = effectsSaveTimeoutRef.current.get(trackId);
+        if (existingTimeout) clearTimeout(existingTimeout);
+
+        const timeout = setTimeout(() => {
+            saveTrackEffects(trackId, updatedEffects);
+            effectsSaveTimeoutRef.current.delete(trackId);
+        }, 500);
+
+        effectsSaveTimeoutRef.current.set(trackId, timeout);
     };
 
     // Builds a chain of the given effects between a source and a destination, in order
@@ -329,6 +351,7 @@ const handleDeleteTrack = async (trackId: string) => {
     ): (() => void) => {
         let currentNode: AudioNode = sourceNode;
         const registeredKeys: string[] = [];
+        const disposeFns: (() => void)[] = [];
 
         effects.forEach((effect) => {
             const processor = EFFECT_PROCESSORS[effect.type];
@@ -341,11 +364,14 @@ const handleDeleteTrack = async (trackId: string) => {
             const key = `${liveKey}:${effect.type}`;
             activeEffectNodesRef.current.set(key, built.update);
             registeredKeys.push(key);
+
+            if(built.dispose) disposeFns.push(built.dispose);
         });
         currentNode.connect(destinationNode);
 
         return () => {
             registeredKeys.forEach((key) => activeEffectNodesRef.current.delete(key));
+            disposeFns.forEach((fn) => fn());
         };
     };
        
@@ -608,7 +634,35 @@ const handleDeleteTrack = async (trackId: string) => {
             </div>
 
             <LiveJam projectId={currentProjectId} />
+            {/* Button to toggle the Notepad Sidebar */}
+            <button 
+                onClick={() => setIsNotesOpen((prev) => !prev)}
+                style={{
+                    position: 'fixed',
+                    top: '20px',
+                    right: '20px',
+                    zIndex: 1000,
+                    padding: '10px 16px',
+                    backgroundColor: 'red',
+                    color: '#fff',
+                    border: 'none',
+                    borderRadius: '6px',
+                    cursor: 'pointer',
+                }}
+            >
+                {isNotesOpen ? 'Close Notes' : '📝 Open Notes'}
+            </button>
+
+            {/* Embedded Document Sidebar Component */}
+            <DocumentSidebar
+                projectId={currentProjectId}
+                isOpen={isNotesOpen}
+                onToggle={() => setIsNotesOpen(!isNotesOpen)}
+            />
+        
  
+
+
             <div className="monitoring-controls">
                 {!isMonitoring ? (
                     <button onClick={startMonitoring}>Start Monitoring</button>
