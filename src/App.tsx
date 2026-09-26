@@ -633,7 +633,10 @@ const handleDeleteTrack = async (trackId: string) => {
                 </select>
             </div>
 
-            <LiveJam projectId={currentProjectId} />
+            <div className="live-jam-container">
+                <LiveJam projectId={currentProjectId} />
+            </div>
+
             {/* Button to toggle the Notepad Sidebar */}
             <button 
                 onClick={() => setIsNotesOpen((prev) => !prev)}
