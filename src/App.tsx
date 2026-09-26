@@ -720,7 +720,7 @@ const handleDeleteTrack = async (trackId: string) => {
  
             {/* Master transport — controls every track in sync */}
             <div className="master-transport">
-                <div className="master-transport-title">Playback</div>
+                <div className="master-transport-title">Rec & Playback</div>
                 <div className="transport-buttons">
                     <button onClick={handleMasterRestart} className="icon-button" aria-label="Restart">
                         ⏮️   
