@@ -661,7 +661,7 @@ const handleDeleteTrack = async (trackId: string) => {
                     cursor: 'pointer',
                 }}
             >
-                {isNotesOpen ? 'Close Notes' : '📝 Open Notes'}
+                {isNotesOpen ? 'Close Notes' : 'Open Notes'}
             </button>
 
             {/* Embedded Document Sidebar Component */}
