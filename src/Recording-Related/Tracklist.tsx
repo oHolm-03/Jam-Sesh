@@ -59,13 +59,14 @@ const TrackList: React.FC<TrackListProps> = ({
                 return (
                     <div
                         key={track.id}
-                        onClick={() => onSelectTrack(track.id)}
+                        onClick={(e) => {
+                            if(e.button !== 0) return;
+                            onSelectTrack(track.id);
+                        }}
                         onContextMenu={(e) => {
                             e.preventDefault();
                             e.stopPropagation();
-                            onSelectTrack(track.id);
 
-                            // Clamp values slightly so menu doesn't overflow right/bottom edge of viewport
                             const x = Math.min(e.clientX, window.innerWidth - 220);
                             const y = Math.min(e.clientY, window.innerHeight - 180);
 

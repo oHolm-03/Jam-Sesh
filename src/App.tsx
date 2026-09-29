@@ -76,8 +76,8 @@ const App = () => {
     };
 
     const handleTrackContextMenu = (trackId: string, x: number, y: number) => {
-        setSelectedTrackId(trackId);
-        setEffectsPanelPosition({ x, y });
+        // setSelectedTrackId(trackId);
+        // setEffectsPanelPosition({ x, y });
     };
 
 
