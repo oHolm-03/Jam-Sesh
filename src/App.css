@@ -82,7 +82,8 @@
 
 .tracks-section {
     margin-top: 20px;
-    max-width: 700px;
+    width: 100%;
+    max-width: none;
 }
 
 .tracks-header {

@@ -21,6 +21,13 @@ type TrackListProps = {
     onToggleMute: (trackId: string) => void;
     onRenameTrack: (trackId: string, newName: string) => Promise<void> | void;
     onDeleteTrack: (trackId: string) => Promise<void> | void;
+    onTrackContextMenu?: (trackId: string, x: number, y: number) => void;
+};
+
+type ContextMenuState = {
+    trackId: string;
+    x?: number;
+    y?: number;
 };
 
 const LANE_COLORS = ['#c9a227', '#3f5fb5', '#3a9c56', '#8a4fc9', '#c9426e'];
@@ -32,13 +39,16 @@ const TrackList: React.FC<TrackListProps> = ({
     onToggleMute,
     onRenameTrack,
     onDeleteTrack,
+    onTrackContextMenu,
 }) => {
-    const [openMenuTrackId, setOpenMenuTrackId] = useState<string | null>(null);
+    const [activeMenu, setActiveMenu] = useState<ContextMenuState | null>(null);
+
+    const activeTrack = tracks.find((t) => t.id === activeMenu?.trackId);
 
     return (
         <div className="track-list-container">
-            {openMenuTrackId && (
-                <div className="track-list-overlay" onClick={() => setOpenMenuTrackId(null)} />
+            {activeMenu && (
+                <div className="track-list-overlay" onClick={() => setActiveMenu(null)} />
             )}
 
             {tracks.map((track, index) => {
@@ -50,6 +60,21 @@ const TrackList: React.FC<TrackListProps> = ({
                     <div
                         key={track.id}
                         onClick={() => onSelectTrack(track.id)}
+                        onContextMenu={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            onSelectTrack(track.id);
+
+                            // Clamp values slightly so menu doesn't overflow right/bottom edge of viewport
+                            const x = Math.min(e.clientX, window.innerWidth - 220);
+                            const y = Math.min(e.clientY, window.innerHeight - 180);
+
+                            setActiveMenu({ trackId: track.id, x, y });
+
+                            if (onTrackContextMenu) {
+                                onTrackContextMenu(track.id, x, y);
+                            }
+                        }}
                         className={laneClassName}
                         style={{ '--lane-color': color } as React.CSSProperties}
                     >
@@ -92,44 +117,61 @@ const TrackList: React.FC<TrackListProps> = ({
                             </div>
                             <button
                                 className="track-settings-button"
-                                onClick={() => setOpenMenuTrackId(openMenuTrackId === track.id ? null : track.id)}
+                                onClick={(e) => {
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    setActiveMenu((prev) =>
+                                        prev?.trackId === track.id
+                                            ? null
+                                            : { trackId: track.id, x: rect.left - 180, y: rect.bottom + 4 }
+                                    );
+                                }}
                                 aria-label="Track settings"
                             >
                                 ⋮
                             </button>
                         </div>
-
-                        {openMenuTrackId === track.id && (
-                            <div className="track-menu" onClick={(e) => e.stopPropagation()}>
-                                <div className="track-menu-rename-row">
-                                    <InlineRename
-                                        value={track.name}
-                                        label="Rename track"
-                                        onSave={(newName) => onRenameTrack(track.id, newName)}
-                                    />
-                                </div>
-
-                                <button
-                                    className="track-menu-action track-menu-action--spaced"
-                                    onClick={() => onToggleMute(track.id)}
-                                >
-                                    {track.muted ? 'Unmute Track' : 'Mute Track'}
-                                </button>
-
-                                <button
-                                    className="track-menu-action"
-                                    onClick={() => {
-                                        setOpenMenuTrackId(null);
-                                        onDeleteTrack(track.id);
-                                    }}
-                                >
-                                    Delete Track
-                                </button>
-                            </div>
-                        )}
                     </div>
                 );
             })}
+
+            {/* Floating context menu rendered outside of the map loop */}
+            {activeMenu && activeTrack && (
+                <div
+                    className="track-menu track-menu--floating"
+                    onClick={(e) => e.stopPropagation()}
+                    style={{
+                        position: 'fixed',
+                        left: `${activeMenu.x}px`,
+                        top: `${activeMenu.y}px`,
+                        zIndex: 1000,
+                    }}
+                >
+                    <div className="track-menu-rename-row">
+                        <InlineRename
+                            value={activeTrack.name}
+                            label="Rename track"
+                            onSave={(newName) => onRenameTrack(activeTrack.id, newName)}
+                        />
+                    </div>
+
+                    <button
+                        className="track-menu-action track-menu-action--spaced"
+                        onClick={() => onToggleMute(activeTrack.id)}
+                    >
+                        {activeTrack.muted ? 'Unmute Track' : 'Mute Track'}
+                    </button>
+
+                    <button
+                        className="track-menu-action"
+                        onClick={() => {
+                            setActiveMenu(null);
+                            onDeleteTrack(activeTrack.id);
+                        }}
+                    >
+                        Delete Track
+                    </button>
+                </div>
+            )}
         </div>
     );
 };

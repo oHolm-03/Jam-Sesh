@@ -130,8 +130,6 @@
     z-index: 10;
 }
 
-/* Last track's menu opens upward instead of down, so it doesn't need to spill
-   past the bottom of the list — handled here instead of an isLast check in JS */
 .track-lane:last-child .track-menu {
     top: auto;
     bottom: 28px;
@@ -148,4 +146,12 @@
 
 .track-menu-action--spaced {
     margin-bottom: 10px;
+}
+
+.track-menu.track-menu--floating {
+    position: fixed;
+    right: auto !important;
+    bottom: auto !important;
+    width: max-content; 
+    z-index: 1000;
 }

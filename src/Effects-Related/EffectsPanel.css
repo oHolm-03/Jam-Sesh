@@ -77,3 +77,13 @@
     color: var(--text-muted, #888);
     font-size: 13px;
 }
+/* 
+.effects-panel-context-positioned {
+    position: fixed;
+    z-index: 2000;
+    transform: translate(0, 0);
+}
+
+.effects-panel-default-positioned {
+    position: relative;
+} */
