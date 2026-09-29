@@ -19,7 +19,6 @@
     background: var(--lane-color);
 }
 
-/* First/last handled here instead of in JS — no isFirst/isLast booleans needed */
 .track-lane:not(:last-child) {
     border-bottom: 1px solid rgba(0, 0, 0, 0.3);
 }
@@ -43,7 +42,7 @@
     position: absolute;
     inset: 0;
     overflow: hidden;
-    border-radius: inherit; /* matches whatever corner rounding the lane itself has */
+    border-radius: inherit;
 }
 
 .track-waveform-svg {
@@ -108,11 +107,6 @@
     color: #fff;
     background: rgba(0, 0, 0, 0.55);
     border-radius: 4px;
-    padding: 2px 6px;
-}
-
-.track-settings-button {
-    font-size: 12px;
     padding: 2px 6px;
 }
 

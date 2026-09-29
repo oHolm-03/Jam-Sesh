@@ -116,20 +116,6 @@ const TrackList: React.FC<TrackListProps> = ({
                                 <span className="track-name">{track.name}</span>
                                 {track.muted && <span className="track-muted-badge">Muted</span>}
                             </div>
-                            <button
-                                className="track-settings-button"
-                                onClick={(e) => {
-                                    const rect = e.currentTarget.getBoundingClientRect();
-                                    setActiveMenu((prev) =>
-                                        prev?.trackId === track.id
-                                            ? null
-                                            : { trackId: track.id, x: rect.left - 180, y: rect.bottom + 4 }
-                                    );
-                                }}
-                                aria-label="Track settings"
-                            >
-                                ⋮
-                            </button>
                         </div>
                     </div>
                 );
