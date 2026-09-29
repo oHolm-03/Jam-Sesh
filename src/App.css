@@ -26,27 +26,30 @@
 }
 
 .master-transport {
-    margin-bottom: 20px;
+    margin: 10px auto;
     max-width: 700px;
     border: 1px solid #ccc;
     border-radius: 6px;
     padding: 16px;
+    box-sizing: border-box;
 }
 
 .master-transport-title {
     font-weight: bold;
     margin-bottom: 8px;
+    text-align: center;
 }
 
 .transport-buttons {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 16px;
     margin-bottom: 8px;
 }
 
 .icon-button {
-    /* placeholder — no rules yet, matches the old empty iconButtonStyle object */
+    /* placeholder; no rules yet, matches the old empty iconButtonStyle object */
 }
 
 .progress-row {
@@ -79,7 +82,8 @@
 
 .tracks-section {
     margin-top: 20px;
-    max-width: 700px;
+    width: 100%;
+    max-width: none;
 }
 
 .tracks-header {
@@ -91,4 +95,12 @@
 
 .tracks-title {
     margin: 0;
+}
+
+.live-jam-container {
+    display: inline-block;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    padding: 10px;
+    margin: 0px 0 20px;
 }

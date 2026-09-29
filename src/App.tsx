@@ -44,6 +44,8 @@ const App = () => {
     const [masterCurrentTime, setMasterCurrentTime] = useState(0);
     const [isLooping, setIsLooping] = useState(false);
     const [isNotesOpen, setIsNotesOpen] = useState(false);
+    const [effectsPanelPosition, setEffectsPanelPosition] = useState<{x: number; y: number;} | null>(null);
+
  
     const monitorStreamRef = useRef<MediaStream | null>(null);
     const monitorSourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
@@ -72,6 +74,12 @@ const App = () => {
         }
         return refs;
     };
+
+    const handleTrackContextMenu = (trackId: string, x: number, y: number) => {
+        // setSelectedTrackId(trackId);
+        // setEffectsPanelPosition({ x, y });
+    };
+
 
     const updateTrackState = (trackId: string, patch: Partial<TrackData>) => {
         setTracks((prev) => prev.map((t) => (t.id === trackId ? { ...t, ...patch} : t)));
@@ -633,7 +641,10 @@ const handleDeleteTrack = async (trackId: string) => {
                 </select>
             </div>
 
-            <LiveJam projectId={currentProjectId} />
+            <div className="live-jam-container">
+                <LiveJam projectId={currentProjectId} />
+            </div>
+
             {/* Button to toggle the Notepad Sidebar */}
             <button 
                 onClick={() => setIsNotesOpen((prev) => !prev)}
@@ -650,7 +661,7 @@ const handleDeleteTrack = async (trackId: string) => {
                     cursor: 'pointer',
                 }}
             >
-                {isNotesOpen ? 'Close Notes' : '📝 Open Notes'}
+                {isNotesOpen ? 'Close Notes' : 'Open Notes'}
             </button>
 
             {/* Embedded Document Sidebar Component */}
@@ -717,7 +728,7 @@ const handleDeleteTrack = async (trackId: string) => {
  
             {/* Master transport — controls every track in sync */}
             <div className="master-transport">
-                <div className="master-transport-title">Playback</div>
+                <div className="master-transport-title">Rec & Playback</div>
                 <div className="transport-buttons">
                     <button onClick={handleMasterRestart} className="icon-button" aria-label="Restart">
                         ⏮️   
@@ -774,29 +785,52 @@ const handleDeleteTrack = async (trackId: string) => {
  
             <div className="tracks-section">
                 <div className="tracks-header">
-                    <h3 className="tracks-title">Tracks</h3>
-                    <button onClick={handleAddTrack}>+ Add Track</button>
+                    <h3 className="tracks-title"><button onClick={handleAddTrack}>+ Add Track</button></h3>
+                    
                 </div>
  
                 <TrackList
                     tracks={tracks}
                     selectedTrackId={selectedTrackId}
-                    onSelectTrack={setSelectedTrackId}
+                    onSelectTrack={(trackId) => {setSelectedTrackId(trackId); setEffectsPanelPosition(null);}}
                     onToggleMute={handleToggleMute}
                     onRenameTrack={handleRenameTrack}
                     onDeleteTrack={handleDeleteTrack}
+                    onTrackContextMenu={handleTrackContextMenu}
                 />
             </div>
 
             {selectedTrack && (
-                <EffectsPanel
-                    key={selectedTrack.id}
-                    track={selectedTrack}
-                    onToggleEffect={(type) => handleToggleTrackEffect(selectedTrack.id, type)}
-                    onUpdateEffectParam={(type, key, value) => handleUpdateTrackEffectParam(selectedTrack.id, type, key, value)}
-                    onClose={() => setSelectedTrackId(null)}
-                />
+                <div
+                    className={
+                        effectsPanelPosition
+                            ? "effects-panel-context-positioned"
+                            : "effects-panel-default-positioned"
+                    }
+                    style={
+                        effectsPanelPosition
+                            ? {
+                                left: effectsPanelPosition.x,
+                                top: effectsPanelPosition.y,
+                            }
+                            : undefined
+                    }
+                >
+                    <EffectsPanel
+                        key={selectedTrack.id}
+                        track={selectedTrack}
+                        onToggleEffect={(type) => handleToggleTrackEffect(selectedTrack.id, type)}
+                        onUpdateEffectParam={(type, key, value) =>
+                            handleUpdateTrackEffectParam(selectedTrack.id, type, key, value)
+                        }
+                        onClose={() => {
+                            setSelectedTrackId(null);
+                            setEffectsPanelPosition(null);
+                        }}
+                    />
+                </div>
             )}
+
 
         </div>
     );

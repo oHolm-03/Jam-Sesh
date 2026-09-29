@@ -19,7 +19,6 @@
     background: var(--lane-color);
 }
 
-/* First/last handled here instead of in JS — no isFirst/isLast booleans needed */
 .track-lane:not(:last-child) {
     border-bottom: 1px solid rgba(0, 0, 0, 0.3);
 }
@@ -43,7 +42,7 @@
     position: absolute;
     inset: 0;
     overflow: hidden;
-    border-radius: inherit; /* matches whatever corner rounding the lane itself has */
+    border-radius: inherit;
 }
 
 .track-waveform-svg {
@@ -111,11 +110,6 @@
     padding: 2px 6px;
 }
 
-.track-settings-button {
-    font-size: 12px;
-    padding: 2px 6px;
-}
-
 .track-menu {
     position: absolute;
     top: 28px;
@@ -130,8 +124,6 @@
     z-index: 10;
 }
 
-/* Last track's menu opens upward instead of down, so it doesn't need to spill
-   past the bottom of the list — handled here instead of an isLast check in JS */
 .track-lane:last-child .track-menu {
     top: auto;
     bottom: 28px;
@@ -148,4 +140,12 @@
 
 .track-menu-action--spaced {
     margin-bottom: 10px;
+}
+
+.track-menu.track-menu--floating {
+    position: fixed;
+    right: auto !important;
+    bottom: auto !important;
+    width: max-content; 
+    z-index: 1000;
 }
