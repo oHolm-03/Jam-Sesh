@@ -19,7 +19,7 @@ function audioBufferToWav(buffer: AudioBuffer): Blob {
     writeString(0, 'RIFF');
     view.setUint32(4, 36 + buffer.length * numChannels * 2, true);
     writeString(8, 'WAVE');
-    writeString(12, 'fmt');
+    writeString(12, 'fmt ');
     view.setUint32(16, 16, true);
     view.setUint16(20, 1, true);
     view.setUint16(22, numChannels, true);
