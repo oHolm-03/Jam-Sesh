@@ -537,7 +537,7 @@ const handleDeleteTrack = async (trackId: string) => {
         if (!audioContextRef.current) return;
         const elapsed = master.playbackOffset + (audioContextRef.current.currentTime - master.playbackStartContextTime);
         setMasterCurrentTime(Math.min(elapsed, getMasterDuration()));
-        master.animationFrame = requestAnimationFrame(() => updateMasterProgress);
+        master.animationFrame = requestAnimationFrame(updateMasterProgress);
     };
  
     // Starts every track that has a recording, all from the same offset, so they play in sync.
@@ -846,6 +846,7 @@ const handleDeleteTrack = async (trackId: string) => {
                 <TrackList
                     tracks={tracks}
                     selectedTrackId={selectedTrackId}
+                    currentTime={masterCurrentTime}
                     onSelectTrack={(trackId) => {setSelectedTrackId(trackId); setEffectsPanelPosition(null);}}
                     onToggleMute={handleToggleMute}
                     onRenameTrack={handleRenameTrack}

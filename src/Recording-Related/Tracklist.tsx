@@ -17,6 +17,7 @@ export type TrackData = {
 type TrackListProps = {
     tracks: TrackData[];
     selectedTrackId: string | null;
+    currentTime: number;
     onSelectTrack: (trackId: string) => void;
     onToggleMute: (trackId: string) => void;
     onRenameTrack: (trackId: string, newName: string) => Promise<void> | void;
@@ -35,6 +36,7 @@ const LANE_COLORS = ['#c9a227', '#3f5fb5', '#3a9c56', '#8a4fc9', '#c9426e'];
 const TrackList: React.FC<TrackListProps> = ({
     tracks,
     selectedTrackId,
+    currentTime,
     onSelectTrack,
     onToggleMute,
     onRenameTrack,
@@ -42,11 +44,15 @@ const TrackList: React.FC<TrackListProps> = ({
     onTrackContextMenu,
 }) => {
     const [activeMenu, setActiveMenu] = useState<ContextMenuState | null>(null);
-
     const activeTrack = tracks.find((t) => t.id === activeMenu?.trackId);
+    const maxDuration = Math.max(...tracks.map((t) => t.duration || 0), 1);
+    const playheadPercent = Math.min((currentTime / maxDuration) * 100, 100);
 
     return (
         <div className="track-list-container">
+            <div className="playhead-line" style={{ left: `${playheadPercent}%` }}>
+                <div className="playhead-head" />
+            </div>
             {activeMenu && (
                 <div className="track-list-overlay" onClick={() => setActiveMenu(null)} />
             )}
@@ -55,6 +61,7 @@ const TrackList: React.FC<TrackListProps> = ({
                 const color = LANE_COLORS[index % LANE_COLORS.length];
                 const isSelected = track.id === selectedTrackId;
                 const laneClassName = `track-lane${isSelected ? ' track-lane--selected' : ''}`;
+                const trackWidthPercent = ((track.duration || 0) / maxDuration) * 100;
 
                 return (
                     <div
