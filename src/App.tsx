@@ -11,6 +11,7 @@ import './App.css';
 import './GlobalStyles.css';
 import LiveJam from './Live-Jam-Related/LiveJam';
 import { DocumentSidebar } from './Documents-Related/Documents';
+import { exportProject, ExportFormat } from './Export-Audio/exportAudio';
 
 type TrackAudioRefs = {
     audioBuffer: AudioBuffer | null;
@@ -36,6 +37,7 @@ const App = () => {
     const [isMonitoring, setIsMonitoring] = useState(false);
     const [session, setSession] = useState<any>(null);
     const [currentProjectId, setCurrentProjectId] = useState<string | null>(null);
+    const [currentProjectName, setCurrentProjectName] = useState<string | null>(null);
     const [username, setUsername] = useState<string | null>(null);
     const [isPasswordRecovery, setIsPasswordRecovery] = useState(false);
     const [tracks, setTracks] = useState<TrackData[]>([]);
@@ -45,6 +47,8 @@ const App = () => {
     const [isLooping, setIsLooping] = useState(false);
     const [isNotesOpen, setIsNotesOpen] = useState(false);
     const [effectsPanelPosition, setEffectsPanelPosition] = useState<{x: number; y: number;} | null>(null);
+    const [exportFormat, setExportFormat] = useState<ExportFormat>('wav');
+    const [isExporting, setIsExporting] = useState(false);
 
  
     const monitorStreamRef = useRef<MediaStream | null>(null);
@@ -75,11 +79,48 @@ const App = () => {
         return refs;
     };
 
+    // get the current project name from the database when the project ID changes
+    useEffect(() => {
+        if (!currentProjectId) {
+            setCurrentProjectName('project-export');
+            return;
+        }
+
+        supabase
+            .from('projects')
+            .select('name')
+            .eq('id', currentProjectId)
+            .single()
+            .then(({ data, error }) => {
+            if (!error && data) setCurrentProjectName(data.name);
+            });
+        }, [currentProjectId]);
+
+    const handleExport = async () => {
+        try {
+            setIsExporting(true);
+            const audioBuffers = new Map<string, AudioBuffer>();
+
+            tracks.forEach((track) => {
+            const buffer = trackAudioRefsRef.current.get(track.id)?.audioBuffer;
+            if (buffer) {
+                audioBuffers.set(track.id, buffer);}
+            });
+
+            if (audioBuffers.size === 0) {
+                throw new Error('No audio found to export');}
+            await exportProject(tracks, audioBuffers, currentProjectName || 'project-export', exportFormat);
+        } catch (err: any) {
+            alert(err.message || 'Export failed');
+        } finally {
+            setIsExporting(false);
+        }
+    };
+
     const handleTrackContextMenu = (trackId: string, x: number, y: number) => {
         // setSelectedTrackId(trackId);
         // setEffectsPanelPosition({ x, y });
     };
-
 
     const updateTrackState = (trackId: string, patch: Partial<TrackData>) => {
         setTracks((prev) => prev.map((t) => (t.id === trackId ? { ...t, ...patch} : t)));
@@ -671,7 +712,20 @@ const handleDeleteTrack = async (trackId: string) => {
                 onToggle={() => setIsNotesOpen(!isNotesOpen)}
             />
         
- 
+            <div className="export-controls" style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                <select 
+                    value={exportFormat} 
+                    onChange={(e) => setExportFormat(e.target.value as ExportFormat)}
+                    disabled={isExporting}
+                >
+                    <option value="wav">WAV (Lossless)</option>
+                    <option value="mp3">MP3 (Compressed)</option>
+                </select>
+
+                <button onClick={handleExport} disabled={isExporting}>
+                    {isExporting ? 'Exporting...' : `Export ${exportFormat.toUpperCase()}`}
+                </button>
+            </div>
 
 
             <div className="monitoring-controls">
