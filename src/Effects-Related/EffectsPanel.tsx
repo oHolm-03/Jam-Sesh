@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { EFFECT_DEFINITIONS } from './Effects';
-import { TrackData } from '../Recording-Related/Tracklist';
+import { TrackData } from '../Tracks-Related/Tracklist';
 import './EffectsPanel.css';
 
 type EffectsPanelProps = {

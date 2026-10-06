@@ -3,8 +3,8 @@ import Auth from './Auth';
 import { supabase } from './supabaseClient';
 import Projects from './Projects';
 import ResetPassword from './ResetPassword';
-import TrackList, {TrackData} from './Recording-Related/Tracklist';
-import { computeWaveformPeaks } from './Recording-Related/Audioutils';
+import TrackList, {TrackData} from './Tracks-Related/Tracklist';
+import { computeWaveformPeaks } from './Tracks-Related/Audioutils';
 import { EFFECT_DEFINITIONS, EFFECT_PROCESSORS, TrackEffectInstance } from './Effects-Related/Effects';
 import EffectsPanel from './Effects-Related/EffectsPanel';
 import './App.css';
@@ -823,17 +823,6 @@ const handleDeleteTrack = async (trackId: string) => {
                         <button onClick={stopRecording}>🟥</button>
                     )}
                     </div>
-                </div>
-
-                <div className="progress-row">
-                    <span className="time-label">{formatTime(masterCurrentTime)}</span>
-                    <div className="progress-track">
-                        <div
-                            className="progress-fill"
-                            style={{ width: `${masterDuration ? (masterCurrentTime / masterDuration) * 100 : 0}%` }}
-                        />
-                    </div>
-                    <span className="time-label">{formatTime(masterDuration)}</span>
                 </div>
             </div>
  
