@@ -44,9 +44,9 @@
     "typescript": "^5.4.5"
   },
   "dependencies": {
+    "@breezystack/lamejs": "^1.2.7",
     "@supabase/supabase-js": "^2.112.3",
     "electron-squirrel-startup": "^1.0.1",
-    "lamejs": "^1.2.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
   }

@@ -1,4 +1,4 @@
-import { Mp3Encoder } from "lamejs";
+import { Mp3Encoder } from "@breezystack/lamejs";
 import { TrackData } from "../Recording-Related/Tracklist";
 
 export type ExportFormat = 'wav' | 'mp3';
@@ -65,7 +65,7 @@ function audioBufferToMp3(buffer: AudioBuffer, kbps: number = 192): Blob {
         const leftChunk = leftInt16.subarray(i, i+sampleBlockSize);
         const rightChunk = rightInt16.subarray(i, i+sampleBlockSize);
 
-        let mp3buf: Int16Array;
+        let mp3buf: Uint8Array;
         if(channels === 1){
             mp3buf = mp3encoder.encodeBuffer(leftChunk);
         } else {
