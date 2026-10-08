@@ -1,0 +1,52 @@
+.recording-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    padding: 12px 16px;
+    margin: 12px 0;
+    border: 1px solid rgba(128, 128, 128, 0.35);
+    border-radius: 8px;
+}
+
+.recording-title {
+    font-weight: 600;
+}
+
+.recording-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px;
+}
+
+.recording-button {
+    font-size: 1.25rem;
+    line-height: 1;
+    padding: 6px 10px;
+    cursor: pointer;
+}
+
+.recording-button:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.recording-distortion-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+
+.recording-distortion-sliders {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.recording-distortion-sliders label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.85rem;
+}
