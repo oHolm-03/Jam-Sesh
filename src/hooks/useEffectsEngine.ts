@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef } from 'react';
-import { TrackData } from '../Tracks-Related/Tracklist';
-import { TrackEffectInstance } from '../Effects-Related/Effects';
+import { TrackData } from '../components/tracks/Tracklist';
+import { TrackEffectInstance } from '../components/effects/Effects';
 import { connectEffectsChain as connect, EffectUpdateRegistry } from '../audio/connectEffectsChain';
 
 // Owns the registry of live effect nodes and pushes track param changes into them.

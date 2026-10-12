@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { TrackEffectInstance } from '../Effects-Related/Effects';
+import { TrackEffectInstance } from '../components/effects/Effects';
 import { EffectUpdateRegistry } from '../audio/connectEffectsChain';
 import { ConnectEffectsChain } from './useEffectsEngine';
 

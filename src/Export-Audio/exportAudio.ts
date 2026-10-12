@@ -1,5 +1,5 @@
 import { Mp3Encoder } from "@breezystack/lamejs";
-import { TrackData } from "../Tracks-Related/Tracklist";
+import { TrackData } from "../components/tracks/Tracklist";
 
 export type ExportFormat = 'wav' | 'mp3';
 

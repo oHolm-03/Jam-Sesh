@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import InlineRename from '../InlineRename';
+import InlineRename from '../../InlineRename';
 import { WaveformPeak } from './Audioutils';
-import { TrackEffectInstance } from '../Effects-Related/Effects';
+import { TrackEffectInstance } from '../effects/Effects';
 import './Tracklist.css';
 
 export type TrackData = {

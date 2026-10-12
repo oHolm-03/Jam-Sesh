@@ -1,8 +1,8 @@
 import { useEffect } from 'react';
-import { TrackData } from '../Recording-Related/Recording';
-import { ConnectEffectsChain } from '../hooks/useEffectsEngine';
-import { TrackAudioRefs } from '../hooks/useTracks';
-import { useMasterPlayback } from '../hooks/useMasterPlayback';
+import { TrackData } from '../tracks/Tracklist';
+import { ConnectEffectsChain } from '../../hooks/useEffectsEngine';
+import { TrackAudioRefs } from '../../hooks/useTracks';
+import { useMasterPlayback } from '../../hooks/useMasterPlayback';
 import './Playback.css';
 
 type Props = {

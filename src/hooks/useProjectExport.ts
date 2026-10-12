@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { exportProject, ExportFormat } from '../Export-Audio/exportAudio';
-import { TrackData } from '../Tracks-Related/Tracklist';
+import { TrackData } from '../components/tracks/Tracklist';
 import { TrackAudioRefs } from './useTracks';
 
 export function useProjectExport(

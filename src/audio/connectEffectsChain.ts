@@ -1,4 +1,4 @@
-import { EFFECT_PROCESSORS, TrackEffectInstance } from '../Effects-Related/Effects';
+import { EFFECT_PROCESSORS, TrackEffectInstance } from '../components/effects/Effects';
 
 // Maps "<liveKey>:<effectType>" -> function that pushes new params into a running effect node
 export type EffectUpdateRegistry = Map<string, (params: Record<string, number>) => void>;

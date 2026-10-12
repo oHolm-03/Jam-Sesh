@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { supabase } from './supabaseClient';
-import InlineRename from './InlineRename';
+import { supabase } from '../../supabaseClient';
+import InlineRename from '../../InlineRename';
 import './Projects.css';
 
 type Project = {

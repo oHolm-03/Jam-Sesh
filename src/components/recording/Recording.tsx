@@ -1,10 +1,10 @@
 import type { MutableRefObject } from 'react';
-import { TrackData } from '../Recording-Related/Tracklist';
-import { EffectUpdateRegistry } from '../audio/connectEffectsChain';
-import { ConnectEffectsChain } from '../hooks/useEffectsEngine';
-import { TrackAudioRefs } from '../hooks/useTracks';
-import { useRecorder } from '../hooks/useRecorder';
-import { useMonitoring } from '../hooks/useMonitoring';
+import { TrackData } from '../tracks/Tracklist';
+import { EffectUpdateRegistry } from '../../audio/connectEffectsChain';
+import { ConnectEffectsChain } from '../../hooks/useEffectsEngine';
+import { TrackAudioRefs } from '../../hooks/useTracks';
+import { useRecorder } from '../../hooks/useRecorder';
+import { useMonitoring } from '../../hooks/useMonitoring';
 import './Recording.css';
 
 type Props = {

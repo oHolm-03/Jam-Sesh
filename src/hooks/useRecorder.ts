@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../supabaseClient';
-import { TrackData } from '../Tracks-Related/Tracklist';
-import { computeWaveformPeaks } from '../Tracks-Related/Audioutils';
+import { TrackData } from '../components/tracks/Tracklist';
+import { computeWaveformPeaks } from '../components/tracks/Audioutils';
 import { TrackAudioRefs } from './useTracks';
 
 type Args = {

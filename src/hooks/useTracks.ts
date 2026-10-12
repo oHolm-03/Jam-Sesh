@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../supabaseClient';
-import { TrackData } from '../Tracks-Related/Tracklist';
-import { computeWaveformPeaks } from '../Tracks-Related/Audioutils';
-import { EFFECT_DEFINITIONS, TrackEffectInstance } from '../Effects-Related/Effects';
+import { TrackData } from '../components/tracks/Tracklist';
+import { computeWaveformPeaks } from '../components/tracks/Audioutils';
+import { EFFECT_DEFINITIONS, TrackEffectInstance } from '../components/effects/Effects';
 
 export type TrackAudioRefs = {
     audioBuffer: AudioBuffer | null;
