@@ -84,6 +84,11 @@
     margin-top: 20px;
     width: 100%;
     max-width: none;
+    padding: 20px;
+    border: 2px solid var(--border-color);
+    background-color: var(--track-section-bg);
+    border-radius: 6px;
+    
 }
 
 .tracks-header {

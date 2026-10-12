@@ -3,6 +3,7 @@
   /* Color Palette - Light */
   --bg-primary: #f8fafc;
   --bg-surface: #ffffff;
+  --track-section-bg: rgb(201, 201, 201);
   --text-primary: #0f172a;
   --text-secondary: #475569;
   --text-muted: #94a3b8;
@@ -28,6 +29,7 @@
     /* Color Palette - Dark */
     --bg-primary: #0f172a;
     --bg-surface: #1e293b;
+    --track-section-bg: rgb(44, 44, 44);
     --text-primary: #f8fafc;
     --text-secondary: #cbd5e1;
     --text-muted: #64748b;

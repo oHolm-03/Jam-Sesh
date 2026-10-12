@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { supabase } from '../supabaseClient';
+import { supabase } from '../../supabaseClient';
 
 /* A STUN server is a public service that helps your device figure out its own reachable public address 
    (most devices sit behind a router/NAT and don't know their outside facing address on their own) */
