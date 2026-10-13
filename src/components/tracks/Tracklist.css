@@ -172,3 +172,36 @@
     background-color: #ff4745;
     clip-path: polygon(0 0, 100% 0, 50% 100%);
 }
+
+/* Header bar above track lanes */
+.track-list-header {
+    display: flex;
+    justify-content: flex-between;
+    align-items: center;
+    padding: 8px 12px;
+    background-color: var(--bg-header, #181818);
+    border-bottom: 1px solid #2a2a2a;
+    border-radius: 6px 6px 0 0;
+    margin-bottom: 4px;
+}
+
+.track-time-display {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.95rem;
+    font-weight: 600;
+}
+
+.time-current {
+    color: #ff4757; 
+}
+
+.time-separator {
+    color: #666;
+}
+
+.time-total {
+    color: #aaa;
+}

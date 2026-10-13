@@ -33,6 +33,18 @@ type ContextMenuState = {
 
 const LANE_COLORS = ['#c9a227', '#3f5fb5', '#3a9c56', '#8a4fc9', '#c9426e'];
 
+const formatTime = (seconds: number): string => {
+        if(!seconds || isNaN(seconds)) return '0:00.00';
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        const millisecs = Math.floor(seconds * 100) % 100;
+
+        const formattedSecs = secs.toString().padStart(2, '0');
+        const formattedMillisecs = millisecs.toString().padStart(2, '0');
+
+        return `${mins}:${formattedSecs}.${formattedMillisecs}`;
+    };
+
 const TrackList: React.FC<TrackListProps> = ({
     tracks,
     selectedTrackId,
@@ -50,6 +62,13 @@ const TrackList: React.FC<TrackListProps> = ({
 
     return (
         <div className="track-list-container">
+            <div className="track-list-header">
+                <div className="track-time-display">
+                    <span className="time-current">{formatTime(currentTime)}</span>
+                    <span className="time-separator">/</span>
+                    <span className="time-total">{formatTime(maxDuration)}</span>
+                </div>
+            </div>
             <div className="playhead-line" style={{ left: `${playheadPercent}%` }}>
                 <div className="playhead-head" />
             </div>
