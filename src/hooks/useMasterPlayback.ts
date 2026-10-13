@@ -97,9 +97,10 @@ export function useMasterPlayback({ projectId, tracks, getTrackAudioRefs, getAud
                     if (isLoopingRef.current) {
                         startFrom(0);
                     } else {
+                        const totalDuration = getDuration();
                         setIsPlaying(false);
-                        setCurrentTime(0);
-                        master.playbackOffset = 0;
+                        setCurrentTime(totalDuration);
+                        master.playbackOffset = totalDuration;
                     }
                 }
             };
