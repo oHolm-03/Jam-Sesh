@@ -126,8 +126,10 @@ export function useMasterPlayback({ projectId, tracks, getTrackAudioRefs, getAud
     };
 
     const restart = () => {
-        if (isPlaying) stopAllActiveSources();
-        startFrom(0);
+        stopAllActiveSources();
+        masterRef.current.playbackOffset = 0;
+        setCurrentTime(0);
+        setIsPlaying(false);
     };
 
     const skipToEnd = () => {
