@@ -121,7 +121,12 @@ export function useMasterPlayback({ projectId, tracks, getTrackAudioRefs, getAud
             stopAllActiveSources();
             setIsPlaying(false);
         } else {
-            startFrom(master.playbackOffset);
+            const totalDuration = getDuration();
+            if(currentTime >= totalDuration || master.playbackOffset >= totalDuration){
+                setCurrentTime(0);
+                startFrom(0);
+            }
+            else{startFrom(master.playbackOffset);}
         }
     };
 
