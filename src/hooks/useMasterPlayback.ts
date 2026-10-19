@@ -185,7 +185,6 @@ export function useMasterPlayback({ projectId, tracks, getTrackAudioRefs, getAud
         masterRef.current.playbackOffset = t;
         setCurrentTime(t);
         if(t >= getDuration()) return;
-        startFrom(t);
     };
 
     return { isPlaying, currentTime, duration, isLooping, playPause, restart, skipToEnd, toggleLoop, beginScrub, scrubTo, endScrub };
