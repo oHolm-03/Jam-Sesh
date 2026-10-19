@@ -150,6 +150,15 @@
     z-index: 1000;
 }
 
+.playhead-line::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -8px;
+    right: -8px;
+}
+
 .playhead-line {
     position: absolute;
     top: 0;
@@ -157,9 +166,14 @@
     width: 2px;
     background-color: #ff4745;
     z-index: 10;
-    pointer-events: none;
-    /* transition: left 0.05s linear; */
+    pointer-events: auto;  
+    cursor: ew-resize;
+    touch-action: none;     
     will-change: left;
+}
+
+.playhead-line--dragging {
+    cursor: grabbing;
 }
 
 .playhead-head {

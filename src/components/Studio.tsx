@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import TrackList from './tracks/Tracklist';
 import EffectsPanel from './effects/EffectsPanel';
 import LiveJam from './live-jam/LiveJam';
@@ -10,6 +10,7 @@ import { useProjectName } from '../hooks/useProjectName';
 import { useTracks } from '../hooks/useTracks';
 import { useEffectsEngine } from '../hooks/useEffectsEngine';
 import { useProjectExport } from '../hooks/useProjectExport';
+import { useMasterPlayback, TransportControls } from '../hooks/useMasterPlayback';
 
 import DeviceSelect from './DeviceSelect';
 import ExportControls from './ExportControls';
@@ -37,6 +38,8 @@ const Studio = ({ projectId, onBack }: Props) => {
     const exporter = useProjectExport(tracks, trackApi.trackAudioRefsRef, projectName);
 
     const selectedTrack = tracks.find((t) => t.id === selectedTrackId) ?? null;
+
+    const transportRef = useRef<TransportControls | null>(null);
 
     return (
         <div className="app-container">
@@ -90,6 +93,7 @@ const Studio = ({ projectId, onBack }: Props) => {
                 getAudioContext={getAudioContext}
                 connectEffectsChain={connectEffectsChain}
                 onTimeChange={setCurrentTime}
+                transportRef={transportRef}
             />
 
             <div className="tracks-section">
@@ -106,6 +110,9 @@ const Studio = ({ projectId, onBack }: Props) => {
                     onRenameTrack={trackApi.renameTrack}
                     onDeleteTrack={trackApi.deleteTrack}
                     onTrackContextMenu={() => {/* context-menu positioning currently disabled */}}
+                    onSeekStart={() => transportRef.current?.beginScrub()}
+                    onSeek={(time) => transportRef.current?.scrubTo(time)}
+                    onSeekEnd={(time) => transportRef.current?.endScrub(time)}
                 />
             </div>
 
