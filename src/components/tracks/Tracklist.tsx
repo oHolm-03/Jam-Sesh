@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import InlineRename from '../../InlineRename';
 import { WaveformPeak } from './Audioutils';
 import { TrackEffectInstance } from '../effects/Effects';
@@ -23,6 +23,10 @@ type TrackListProps = {
     onRenameTrack: (trackId: string, newName: string) => Promise<void> | void;
     onDeleteTrack: (trackId: string) => Promise<void> | void;
     onTrackContextMenu?: (trackId: string, x: number, y: number) => void;
+    // Playhead dragging
+    onSeekStart?: () => void;
+    onSeek?: (time: number) => void;
+    onSeekEnd?: (time: number) => void;
 };
 
 type ContextMenuState = {
@@ -33,6 +37,18 @@ type ContextMenuState = {
 
 const LANE_COLORS = ['#c9a227', '#3f5fb5', '#3a9c56', '#8a4fc9', '#c9426e'];
 
+const formatTime = (seconds: number): string => {
+        if(!seconds || isNaN(seconds)) return '0:00.00';
+        const mins = Math.floor(seconds / 60);
+        const secs = Math.floor(seconds % 60);
+        const millisecs = Math.floor(seconds * 100) % 100;
+
+        const formattedSecs = secs.toString().padStart(2, '0');
+        const formattedMillisecs = millisecs.toString().padStart(2, '0');
+
+        return `${mins}:${formattedSecs}.${formattedMillisecs}`;
+    };
+
 const TrackList: React.FC<TrackListProps> = ({
     tracks,
     selectedTrackId,
@@ -42,15 +58,68 @@ const TrackList: React.FC<TrackListProps> = ({
     onRenameTrack,
     onDeleteTrack,
     onTrackContextMenu,
+    onSeekStart,
+    onSeek,
+    onSeekEnd,
 }) => {
     const [activeMenu, setActiveMenu] = useState<ContextMenuState | null>(null);
+    const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false);
+    const containerRef = useRef<HTMLDivElement>(null);
+
     const activeTrack = tracks.find((t) => t.id === activeMenu?.trackId);
     const maxDuration = Math.max(...tracks.map((t) => t.duration || 0), 1);
     const playheadPercent = Math.min((currentTime / maxDuration) * 100, 100);
 
+    //Converts pointers x pos into a time, using the same width percentage mapping for the playhead line.
+    const timeFromClientX = (clientX: number): number => {
+        const el = containerRef.current;
+        if (!el) return 0;
+        const rect = el.getBoundingClientRect();
+        const pct = rect.width > 0 ? (clientX - rect.left) / rect.width : 0;
+        return Math.min(Math.max(pct, 0), 1) * maxDuration;
+    };
+
+    const handlePlayheadPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+        if (e.button !== 0) return;
+        e.preventDefault();
+        e.stopPropagation();
+        e.currentTarget.setPointerCapture(e.pointerId);
+        setIsDraggingPlayhead(true);
+        onSeekStart?.();
+        onSeek?.(timeFromClientX(e.clientX));
+    };
+
+    const handlePlayheadPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+        if (!isDraggingPlayhead) return;
+        onSeek?.(timeFromClientX(e.clientX));
+    };
+
+    const handlePlayheadPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+        if (!isDraggingPlayhead) return;
+        if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+            e.currentTarget.releasePointerCapture(e.pointerId);
+        }
+        setIsDraggingPlayhead(false);
+        onSeekEnd?.(timeFromClientX(e.clientX));
+    };
+
     return (
-        <div className="track-list-container">
-            <div className="playhead-line" style={{ left: `${playheadPercent}%` }}>
+        <div ref={containerRef} className="track-list-container">
+            <div className="track-list-header">
+                <div className="track-time-display">
+                    <span className="time-current">{formatTime(currentTime)}</span>
+                    <span className="time-separator">/</span>
+                    <span className="time-total">{formatTime(maxDuration)}</span>
+                </div>
+            </div>
+            <div
+                className={`playhead-line${isDraggingPlayhead ? ' playhead-line--dragging' : ''}`}
+                style={{ left: `${playheadPercent}%` }}
+                onPointerDown={handlePlayheadPointerDown}
+                onPointerMove={handlePlayheadPointerMove}
+                onPointerUp={handlePlayheadPointerUp}
+                onPointerCancel={handlePlayheadPointerUp}
+            >
                 <div className="playhead-head" />
             </div>
             {activeMenu && (

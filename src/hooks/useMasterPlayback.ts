@@ -9,6 +9,13 @@ type MasterPlaybackState = {
     playbackStartContextTime: number;
     isManualStop: boolean;
     animationFrame: number | null;
+    generation: number; 
+};
+
+export type TransportControls = {
+    beginScrub: () => void;
+    scrubTo: (time: number) => void;
+    endScrub: (time: number) => void;
 };
 
 type Args = {
@@ -30,6 +37,7 @@ export function useMasterPlayback({ projectId, tracks, getTrackAudioRefs, getAud
         playbackStartContextTime: 0,
         isManualStop: false,
         animationFrame: null,
+        generation: 0,
     });
     const isLoopingRef = useRef(false);
     // Always-current tracks, so loop restarts and the progress bar don't read stale closures
@@ -68,6 +76,7 @@ export function useMasterPlayback({ projectId, tracks, getTrackAudioRefs, getAud
         const master = masterRef.current;
         master.isManualStop = false;
         master.activeSources = [];
+        const gen = ++master.generation;
 
         let remainingToEnd = playable.length;
 
@@ -91,15 +100,16 @@ export function useMasterPlayback({ projectId, tracks, getTrackAudioRefs, getAud
             source.onended = () => {
                 cleanupEffects();
                 remainingToEnd -= 1;
-                if (master.isManualStop) return;
+                if (master.isManualStop || gen !== master.generation) return;
                 if (remainingToEnd <= 0) {
                     if (master.animationFrame) cancelAnimationFrame(master.animationFrame);
                     if (isLoopingRef.current) {
                         startFrom(0);
                     } else {
+                        const totalDuration = getDuration();
                         setIsPlaying(false);
-                        setCurrentTime(0);
-                        master.playbackOffset = 0;
+                        setCurrentTime(totalDuration);
+                        master.playbackOffset = totalDuration;
                     }
                 }
             };
@@ -120,13 +130,20 @@ export function useMasterPlayback({ projectId, tracks, getTrackAudioRefs, getAud
             stopAllActiveSources();
             setIsPlaying(false);
         } else {
-            startFrom(master.playbackOffset);
+            const totalDuration = getDuration();
+            if(currentTime >= totalDuration || master.playbackOffset >= totalDuration){
+                setCurrentTime(0);
+                startFrom(0);
+            }
+            else{startFrom(master.playbackOffset);}
         }
     };
 
     const restart = () => {
-        if (isPlaying) stopAllActiveSources();
-        startFrom(0);
+        stopAllActiveSources();
+        masterRef.current.playbackOffset = 0;
+        setCurrentTime(0);
+        setIsPlaying(false);
     };
 
     const skipToEnd = () => {
@@ -149,5 +166,26 @@ export function useMasterPlayback({ projectId, tracks, getTrackAudioRefs, getAud
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [projectId]);
 
-    return { isPlaying, currentTime, duration, isLooping, playPause, restart, skipToEnd, toggleLoop };
+    //scrub functions for dragging the playhead
+    const clampTime = (t: number) => Math.max(0, Math.min(t, getDuration()));
+
+    const beginScrub = () => {
+        stopAllActiveSources();
+        setIsPlaying(false);
+    };
+
+    const scrubTo = (time: number) => {
+        const t = clampTime(time);
+        masterRef.current.playbackOffset = t;
+        setCurrentTime(t);
+    };
+
+    const endScrub = (time: number) => {
+        const t = clampTime(time);
+        masterRef.current.playbackOffset = t;
+        setCurrentTime(t);
+        if(t >= getDuration()) return;
+    };
+
+    return { isPlaying, currentTime, duration, isLooping, playPause, restart, skipToEnd, toggleLoop, beginScrub, scrubTo, endScrub };
 }

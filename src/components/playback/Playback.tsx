@@ -1,8 +1,8 @@
-import { useEffect } from 'react';
+import { useEffect, RefObject } from 'react';
 import { TrackData } from '../tracks/Tracklist';
 import { ConnectEffectsChain } from '../../hooks/useEffectsEngine';
 import { TrackAudioRefs } from '../../hooks/useTracks';
-import { useMasterPlayback } from '../../hooks/useMasterPlayback';
+import { useMasterPlayback, TransportControls } from '../../hooks/useMasterPlayback';
 import './Playback.css';
 
 type Props = {
@@ -13,6 +13,7 @@ type Props = {
     connectEffectsChain: ConnectEffectsChain;
     // Reports the playhead position so other components (e.g. the track list) can follow it
     onTimeChange?: (seconds: number) => void;
+    transportRef?: RefObject<TransportControls | null>;
 };
 
 // Output side only: master transport that plays every recorded track in sync.
@@ -23,6 +24,7 @@ const Playback = ({
     getAudioContext,
     connectEffectsChain,
     onTimeChange,
+    transportRef,
 }: Props) => {
     const playback = useMasterPlayback({
         projectId,
@@ -35,6 +37,15 @@ const Playback = ({
     useEffect(() => {
         onTimeChange?.(playback.currentTime);
     }, [playback.currentTime, onTimeChange]);
+
+    useEffect(() => {
+        if(!transportRef) return;
+        transportRef.current = {
+            beginScrub: playback.beginScrub,
+            scrubTo: playback.scrubTo,
+            endScrub: playback.endScrub,
+        };
+    });
 
     return (
         <section className="playback-panel">
