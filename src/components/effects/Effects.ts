@@ -44,7 +44,7 @@ const makeDistortionCurve = (amount: number): Float32Array => {
 const distortionProcessor: EffectProcessor = {
     build: (audioContext, params) => {
         const waveshaper = audioContext.createWaveShaper();
-        waveshaper.curve = makeDistortionCurve(params.drive);
+        waveshaper.curve = makeDistortionCurve(params.drive) as any;
         waveshaper.oversample = '4x';
 
         const toneFilter = audioContext.createBiquadFilter();
@@ -61,7 +61,7 @@ const distortionProcessor: EffectProcessor = {
             inputNode: waveshaper,
             outputNode: levelGain,
             update: (newParams) => {
-                waveshaper.curve = makeDistortionCurve(newParams.drive);
+                waveshaper.curve = makeDistortionCurve(newParams.drive) as any;
                 toneFilter.frequency.value = newParams.tone;
                 levelGain.gain.value = newParams.level;
             },
@@ -182,7 +182,7 @@ const overdriveProcessor: EffectProcessor = {
         preFilter.frequency.value = 320;
 
         const waveshaper = audioContext.createWaveShaper();
-        waveshaper.curve = makeOverdriveCurve(params.drive);
+        waveshaper.curve = makeOverdriveCurve(params.drive) as any;
         waveshaper.oversample = '4x';
 
         const midBoost = audioContext.createBiquadFilter();
@@ -204,7 +204,7 @@ const overdriveProcessor: EffectProcessor = {
             inputNode,
             outputNode,
             update: (newParams) => {
-                waveshaper.curve = makeOverdriveCurve(newParams.drive);
+                waveshaper.curve = makeOverdriveCurve(newParams.drive) as any;
                 midBoost.gain.value = newParams.tone;
                 levelGain.gain.value = newParams.level;
             },

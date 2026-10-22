@@ -26,6 +26,7 @@ const Studio = ({ projectId, onBack }: Props) => {
     const [isNotesOpen, setIsNotesOpen] = useState(false);
     const [effectsPanelPosition, setEffectsPanelPosition] = useState<{ x: number; y: number } | null>(null);
     const [currentTime, setCurrentTime] = useState(0);
+    const [isTrimMode, setIsTrimMode] = useState(false);
 
     const getAudioContext = useAudioContext();
     const { devices, selectedDeviceId, setSelectedDeviceId } = useAudioDevices();
@@ -40,6 +41,21 @@ const Studio = ({ projectId, onBack }: Props) => {
     const selectedTrack = tracks.find((t) => t.id === selectedTrackId) ?? null;
 
     const transportRef = useRef<TransportControls | null>(null);
+
+    const toggleTrimMode = () => {
+        transportRef.current?.beginScrub();
+        setIsTrimMode((prev) => !prev);
+    };
+
+    const handleTrimTrack = async (trackId: string, startSec: number, endSec: number) => {
+        transportRef.current?.beginScrub();
+        const ok = await trackApi.trimTrack(trackId, startSec, endSec);
+        if(!ok){
+            window.alert('Could not save the trim. Your track is unchanged.');
+            return;
+        }
+        transportRef.current?.scrubTo(0);
+    };
 
     return (
         <div className="app-container">
@@ -96,9 +112,22 @@ const Studio = ({ projectId, onBack }: Props) => {
                 transportRef={transportRef}
             />
 
-            <div className="tracks-section">
+            {/* <div className="tracks-section">
                 <div className="tracks-header">
                     <h3 className="tracks-title"><button onClick={trackApi.addTrack}>+ Add Track</button></h3>
+                </div> */}
+            <div className="tracks-section">
+                <div className="tracks-header">
+                    <h3 className="tracks-title">
+                        <button onClick={trackApi.addTrack}>+ Add Track</button>
+                        <button
+                            onClick={toggleTrimMode}
+                            aria-pressed={isTrimMode}
+                            className={`trim-toggle${isTrimMode ? ' is-active' : ''}`}
+                        >
+                            {isTrimMode ? 'Exit Trim' : 'Trim'}
+                        </button>
+                    </h3>
                 </div>
 
                 <TrackList
@@ -113,6 +142,8 @@ const Studio = ({ projectId, onBack }: Props) => {
                     onSeekStart={() => transportRef.current?.beginScrub()}
                     onSeek={(time) => transportRef.current?.scrubTo(time)}
                     onSeekEnd={(time) => transportRef.current?.endScrub(time)}
+                    isTrimMode={isTrimMode}
+                    onTrimTrack={handleTrimTrack}
                 />
             </div>
 
