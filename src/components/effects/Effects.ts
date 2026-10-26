@@ -182,6 +182,7 @@ const overdriveProcessor: EffectProcessor = {
         preFilter.frequency.value = 320;
 
         const waveshaper = audioContext.createWaveShaper();
+        waveshaper.curve = makeOverdriveCurve(params.drive) as any;
         waveshaper.curve = makeDistortionCurve(params.drive) as any;
         waveshaper.oversample = '4x';
 
@@ -204,6 +205,7 @@ const overdriveProcessor: EffectProcessor = {
             inputNode,
             outputNode,
             update: (newParams) => {
+                waveshaper.curve = makeOverdriveCurve(newParams.drive) as any;
                 waveshaper.curve = makeDistortionCurve(newParams.drive) as any;
                 midBoost.gain.value = newParams.tone;
                 levelGain.gain.value = newParams.level;

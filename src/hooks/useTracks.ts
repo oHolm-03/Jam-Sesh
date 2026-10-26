@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../supabaseClient';
 import { TrackData } from '../components/tracks/Tracklist';
-import { computeWaveformPeaks } from '../components/tracks/Audioutils';
+import { computeWaveformPeaks, trimAudioBuffer, encodeWav } from '../components/tracks/Audioutils';
 import { EFFECT_DEFINITIONS, TrackEffectInstance } from '../components/effects/Effects';
 
 export type TrackAudioRefs = {
@@ -155,6 +155,76 @@ export function useTracks(projectId: string, getAudioContext: () => AudioContext
         setSelectedTrackId((prev) => (prev === trackId ? null : prev));
     };
 
+    //DEBUGGING CODE------------
+    
+
+    const trimTrack = async (trackId: string, startSec: number, endSec: number): Promise<boolean> => {
+        const refs = getTrackAudioRefs(trackId);
+        if(!refs.audioBuffer) return false;
+
+        let trimmed: AudioBuffer;
+        let blob: Blob;
+        try{
+            trimmed = trimAudioBuffer(getAudioContext(), refs.audioBuffer, startSec, endSec);
+            blob = encodeWav(trimmed);
+        } catch(err) {
+            console.error('Failed to trim audio:', err);
+            return false;
+        }
+        // stops bad file from replacing good one
+        try {
+            await getAudioContext().decodeAudioData(await blob.arrayBuffer());
+        } catch (err) {
+            console.error('Encoded WAV does not decode, not saving:', err);
+            return false;
+        }
+
+        //Remember the existing clips so they can be cleaned up after the new one is saved
+        const {data: oldClips} = await supabase
+            .from('clips')
+            .select('id, storage_path')
+
+        const {data: userData} = await supabase.auth.getUser();
+        const userId = userData.user?.id;
+        
+        // 1. Upload the trimmed audio
+        const storagePath = `${trackId}/${Date.now()}.wav`;
+        const {error: uploadError} = await supabase.storage
+            .from('audio-clips')
+            .upload(storagePath, blob, {contentType: 'audio/wav'});
+            const { data: check } = await supabase.storage.from('audio-clips').download(storagePath);
+            console.log('uploaded bytes:', blob.size, 'downloaded bytes:', check?.size, 'type:', check?.type);
+        if(uploadError){
+            console.error('Failed to upload trimmed clip:', uploadError);
+            return false;
+        }
+
+        // 2. Add the clip row
+        const {error: insertError} = await supabase
+            .from('clips')
+            .insert({track_id: trackId, uploaded_by: userId, storage_path: storagePath, file_size_bytes: blob.size});
+        if(insertError){
+            console.error('Failed to save trimmed clips:', insertError);
+            await supabase.storage.from('audio-clips').remove([storagePath]);
+            return false;
+        }
+
+        // 3. Saved, swap audio in memory and refresh UI
+        refs.audioBuffer = trimmed;
+        refs.duration = trimmed.duration;
+        updateTrackState(trackId, {duration: trimmed.duration, waveformPeaks: computeWaveformPeaks(trimmed),});
+    
+        // 4. Remove untrimmed clips
+        if(oldClips && oldClips.length > 0){
+            const {error: rowError} = await supabase.from('clips').delete().in('id', oldClips.map((c) => c.id));
+            if(rowError) console.error('Failed to remove old clip rows:', rowError);
+            const {error: fileError} = await supabase.storage.from('audio-clips').remove(oldClips.map((c) => c.storage_path));
+            if(fileError) console.error('Failed to remove old clip files:', fileError);
+        }
+        return true;
+    };
+
+
     const toggleEffect = (trackId: string, type: string) => {
         const track = tracks.find((t) => t.id === trackId);
         if (!track) return;
@@ -201,5 +271,6 @@ export function useTracks(projectId: string, getAudioContext: () => AudioContext
         deleteTrack,
         toggleEffect,
         updateEffectParam,
+        trimTrack,
     };
 }

@@ -219,3 +219,41 @@
 .time-total {
     color: #aaa;
 }
+
+.trim-toggle.is-active { background: #ff4745; color: #fff; }
+.trim-controls { display: flex; align-items: center; gap: 8px; font-size: 0.85rem; }
+.trim-range-label { font-family: 'Courier New', Courier, monospace; color: #aaa; }
+.trim-hint { color: #888; }
+.trim-button--primary { background: #ff4745; color: #fff; }
+
+.track-lane--trimming { outline: 2px dashed #fff; outline-offset: -2px; }
+
+.trim-dim {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.6);
+    pointer-events: none;
+    z-index: 3;
+}
+
+.trim-handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    margin-left: -2px;
+    background: #fff;
+    cursor: ew-resize;
+    touch-action: none;
+    z-index: 6;
+}
+
+.trim-handle::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: -8px;
+    right: -8px;
+}
