@@ -91,6 +91,58 @@
     
 }
 
+.track-tools-panel {
+    width: 100%;
+    padding: 16px 20px 20px;
+    border: 2px solid var(--border-color);
+    border-top: 0;
+    background-color: var(--track-section-bg);
+    border-radius: 0 0 6px 6px;
+}
+
+.track-tools-tabs {
+    display: flex;
+    gap: 8px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.track-tools-tabs button[aria-selected="true"] {
+    background-color: var(--primary-hover);
+}
+
+.track-tools-tabs button:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.track-tools-content {
+    padding-top: 12px;
+}
+
+.track-tools-empty {
+    color: var(--text-secondary);
+}
+
+.track-settings h3 {
+    margin-bottom: 12px;
+}
+
+.track-settings-actions {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.track-settings-delete {
+    background-color: var(--danger);
+}
+
+.track-settings-delete:hover {
+    background-color: var(--danger-hover);
+}
+
 .tracks-header {
     display: flex;
     justify-content: space-between;

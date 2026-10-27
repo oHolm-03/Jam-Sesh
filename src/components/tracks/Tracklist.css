@@ -6,6 +6,12 @@
     position: relative;
 }
 
+.track-lanes-scroll {
+    position: relative;
+    max-height: 380px;
+    overflow-y: auto;
+}
+
 .track-list-overlay {
     position: fixed;
     inset: 0;

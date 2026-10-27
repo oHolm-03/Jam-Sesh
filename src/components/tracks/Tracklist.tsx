@@ -98,7 +98,7 @@ const TrackList: React.FC<TrackListProps> = ({
         const el = containerRef.current;
         if (!el) return 0;
         const rect = el.getBoundingClientRect();
-        const pct = rect.width > 0 ? (clientX - rect.left) / rect.width : 0;
+        const pct = el.clientWidth > 0 ? (clientX - rect.left) / el.clientWidth : 0;
         return Math.min(Math.max(pct, 0), 1) * maxDuration;
     };
 
@@ -172,7 +172,7 @@ const TrackList: React.FC<TrackListProps> = ({
     };
 
     return (
-        <div ref={containerRef} className="track-list-container">
+        <div className="track-list-container">
             <div className="track-list-header">
                 <div className="track-time-display">
                     <span className="time-current">{formatTime(currentTime)}</span>
@@ -208,25 +208,26 @@ const TrackList: React.FC<TrackListProps> = ({
                     </div>
                 )}
             </div>
-            <div
-                className={
-                    'playhead-line' +
-                    (isDraggingPlayhead ? ' playhead-line--dragging' : '') +
-                    (isTrimMode ? ' playhead-line--locked' : '')
-                }
-                style={{ left: `${playheadPercent}%` }}
-                onPointerDown={handlePlayheadPointerDown}
-                onPointerMove={handlePlayheadPointerMove}
-                onPointerUp={handlePlayheadPointerUp}
-                onPointerCancel={handlePlayheadPointerUp}
-            >
-                <div className="playhead-head" />
-            </div>
-            {activeMenu && (
-                <div className="track-list-overlay" onClick={() => setActiveMenu(null)} />
-            )}
+            <div ref={containerRef} className="track-lanes-scroll">
+                <div
+                    className={
+                        'playhead-line' +
+                        (isDraggingPlayhead ? ' playhead-line--dragging' : '') +
+                        (isTrimMode ? ' playhead-line--locked' : '')
+                    }
+                    style={{ left: `${playheadPercent}%` }}
+                    onPointerDown={handlePlayheadPointerDown}
+                    onPointerMove={handlePlayheadPointerMove}
+                    onPointerUp={handlePlayheadPointerUp}
+                    onPointerCancel={handlePlayheadPointerUp}
+                >
+                    <div className="playhead-head" />
+                </div>
+                {activeMenu && (
+                    <div className="track-list-overlay" onClick={() => setActiveMenu(null)} />
+                )}
  
-            {tracks.map((track, index) => {
+                {tracks.map((track, index) => {
                 const color = LANE_COLORS[index % LANE_COLORS.length];
                 const isSelected = track.id === selectedTrackId;
                 const isTrimming = !!trimTarget && trimTarget.id === track.id;
@@ -341,7 +342,8 @@ const TrackList: React.FC<TrackListProps> = ({
                         </div>
                     </div>
                 );
-            })}
+                })}
+            </div>
  
             {/* Floating context menu rendered outside of the map loop */}
             {activeMenu && activeTrack && (
