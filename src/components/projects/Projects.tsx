@@ -22,6 +22,18 @@ const Projects = ({ onSelectProject }: { onSelectProject: (id: string) => void }
     const [currentUserId, setCurrentUserId] = useState<string | null>(null);
     const [openMenuProjectId, setOpenMenuProjectId] = useState<string | null>(null);
     const [loading, setLoading] = useState<boolean>(false);
+    const [signingOut, setSigningOut] = useState(false);
+
+    const handleSignOut = async () => {
+        setSigningOut(true);
+        setErrorMsg('');
+
+        const { error } = await supabase.auth.signOut();
+        if (error) {
+            setErrorMsg(error.message);
+            setSigningOut(false);
+        }
+    };
 
     const fetchProjects = async () => {
         //only returning rows where user is actually a project member
@@ -252,7 +264,17 @@ const Projects = ({ onSelectProject }: { onSelectProject: (id: string) => void }
 
     return (
         <div className="projects-container">
-            <h2>Your Projects</h2>
+            <div className="projects-header">
+                <h2>Your Projects</h2>
+                <button
+                    type="button"
+                    className="sign-out-button"
+                    onClick={handleSignOut}
+                    disabled={signingOut}
+                >
+                    {signingOut ? 'Signing out...' : 'Sign Out'}
+                </button>
+            </div>
 
             <div className="new-project-section">
                 <input

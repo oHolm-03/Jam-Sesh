@@ -1,15 +1,11 @@
 .effects-panel-container {
-    position: fixed;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 220px;
+    position: relative;
+    min-height: 220px;
     background-color: var(--bg-surface);
     color: var(--text-primary);
     border-top: 1px solid var(--border-color);
     box-shadow: var(--shadow-md, 0 -2px 12px rgba(0, 0, 0, 0.15));
     display: flex;
-    z-index: 20;
     font-family: var(--font-family, sans-serif);
 }
 
@@ -77,13 +73,3 @@
     color: var(--text-muted, #888);
     font-size: 13px;
 }
-/* 
-.effects-panel-context-positioned {
-    position: fixed;
-    z-index: 2000;
-    transform: translate(0, 0);
-}
-
-.effects-panel-default-positioned {
-    position: relative;
-} */

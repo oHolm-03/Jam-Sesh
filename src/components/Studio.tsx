@@ -3,6 +3,7 @@ import TrackList from './tracks/Tracklist';
 import EffectsPanel from './effects/EffectsPanel';
 import LiveJam from './live-jam/LiveJam';
 import { DocumentSidebar } from './documents/Documents';
+import InlineRename from '../InlineRename';
 
 import { useAudioContext } from '../hooks/useAudioContext';
 import { useAudioDevices } from '../hooks/useAudioDevices';
@@ -24,7 +25,7 @@ type Props = {
 
 const Studio = ({ projectId, onBack }: Props) => {
     const [isNotesOpen, setIsNotesOpen] = useState(false);
-    const [effectsPanelPosition, setEffectsPanelPosition] = useState<{ x: number; y: number } | null>(null);
+    const [activeTrackPanel, setActiveTrackPanel] = useState<'effects' | 'settings' | null>(null);
     const [currentTime, setCurrentTime] = useState(0);
     const [isTrimMode, setIsTrimMode] = useState(false);
 
@@ -112,10 +113,6 @@ const Studio = ({ projectId, onBack }: Props) => {
                 transportRef={transportRef}
             />
 
-            {/* <div className="tracks-section">
-                <div className="tracks-header">
-                    <h3 className="tracks-title"><button onClick={trackApi.addTrack}>+ Add Track</button></h3>
-                </div> */}
             <div className="tracks-section">
                 <div className="tracks-header">
                     <h3 className="tracks-title">
@@ -134,7 +131,7 @@ const Studio = ({ projectId, onBack }: Props) => {
                     tracks={tracks}
                     selectedTrackId={selectedTrackId}
                     currentTime={currentTime}
-                    onSelectTrack={(trackId) => { setSelectedTrackId(trackId); setEffectsPanelPosition(null); }}
+                    onSelectTrack={setSelectedTrackId}
                     onToggleMute={trackApi.toggleMute}
                     onRenameTrack={trackApi.renameTrack}
                     onDeleteTrack={trackApi.deleteTrack}
@@ -147,22 +144,71 @@ const Studio = ({ projectId, onBack }: Props) => {
                 />
             </div>
 
-            {selectedTrack && (
-                <div
-                    className={effectsPanelPosition ? 'effects-panel-context-positioned' : 'effects-panel-default-positioned'}
-                    style={effectsPanelPosition ? { left: effectsPanelPosition.x, top: effectsPanelPosition.y } : undefined}
-                >
-                    <EffectsPanel
-                        key={selectedTrack.id}
-                        track={selectedTrack}
-                        onToggleEffect={(type) => trackApi.toggleEffect(selectedTrack.id, type)}
-                        onUpdateEffectParam={(type, key, value) =>
-                            trackApi.updateEffectParam(selectedTrack.id, type, key, value)
-                        }
-                        onClose={() => { setSelectedTrackId(null); setEffectsPanelPosition(null); }}
-                    />
+            <section className="track-tools-panel" aria-label="Selected track tools">
+                <div className="track-tools-tabs" role="tablist" aria-label="Track tools">
+                    <button
+                        type="button"
+                        role="tab"
+                        aria-selected={activeTrackPanel === 'effects'}
+                        aria-controls="track-tools-content"
+                        disabled={!selectedTrack}
+                        onClick={() => setActiveTrackPanel('effects')}
+                    >
+                        Effects
+                    </button>
+                    <button
+                        type="button"
+                        role="tab"
+                        aria-selected={activeTrackPanel === 'settings'}
+                        aria-controls="track-tools-content"
+                        disabled={!selectedTrack}
+                        onClick={() => setActiveTrackPanel('settings')}
+                    >
+                        Track Settings
+                    </button>
                 </div>
-            )}
+                <div id="track-tools-content" className="track-tools-content">
+                    {!selectedTrack ? (
+                        <p className="track-tools-empty">Select a track to view its tools.</p>
+                    ) : activeTrackPanel === 'effects' ? (
+                        <EffectsPanel
+                            key={selectedTrack.id}
+                            track={selectedTrack}
+                            onToggleEffect={(type) => trackApi.toggleEffect(selectedTrack.id, type)}
+                            onUpdateEffectParam={(type, key, value) =>
+                                trackApi.updateEffectParam(selectedTrack.id, type, key, value)
+                            }
+                            onClose={() => setActiveTrackPanel(null)}
+                        />
+                    ) : activeTrackPanel === 'settings' ? (
+                        <div className="track-settings">
+                            <h3>{selectedTrack.name}</h3>
+                            <div className="track-settings-actions">
+                                <InlineRename
+                                    value={selectedTrack.name}
+                                    label="Rename track"
+                                    onSave={(newName) => trackApi.renameTrack(selectedTrack.id, newName)}
+                                />
+                                <button
+                                    type="button"
+                                    onClick={() => trackApi.toggleMute(selectedTrack.id)}
+                                >
+                                    {selectedTrack.muted ? 'Unmute Track' : 'Mute Track'}
+                                </button>
+                                <button
+                                    type="button"
+                                    className="track-settings-delete"
+                                    onClick={() => trackApi.deleteTrack(selectedTrack.id)}
+                                >
+                                    Delete Track
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        <p className="track-tools-empty">Choose Effects or Track Settings.</p>
+                    )}
+                </div>
+            </section>
         </div>
     );
 };

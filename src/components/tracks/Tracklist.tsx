@@ -90,7 +90,11 @@ const TrackList: React.FC<TrackListProps> = ({
     const isRangeChanged = !!trimTarget && !!range && (range.start > 0.001 || range.end < trimTarget.duration - 0.001);
     //leaving trim mode discards any unapplied handle positions
     useEffect(() => {
-        if(!isTrimMode) setTrimRange(null);
+        if(!isTrimMode) {
+            setTrimRange(null);
+        } else {
+            setIsDraggingPlayhead(false);
+        }
     }, [isTrimMode]);
 
     //Converts pointers x pos into a time, using the same width percentage mapping for the playhead line.
@@ -98,7 +102,7 @@ const TrackList: React.FC<TrackListProps> = ({
         const el = containerRef.current;
         if (!el) return 0;
         const rect = el.getBoundingClientRect();
-        const pct = rect.width > 0 ? (clientX - rect.left) / rect.width : 0;
+        const pct = el.clientWidth > 0 ? (clientX - rect.left) / el.clientWidth : 0;
         return Math.min(Math.max(pct, 0), 1) * maxDuration;
     };
 
@@ -114,7 +118,7 @@ const TrackList: React.FC<TrackListProps> = ({
     };
 
     const handlePlayheadPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-        if (!isDraggingPlayhead) return;
+        if (isTrimMode || !isDraggingPlayhead) return;
         onSeek?.(timeFromClientX(e.clientX));
     };
 
@@ -124,7 +128,9 @@ const TrackList: React.FC<TrackListProps> = ({
             e.currentTarget.releasePointerCapture(e.pointerId);
         }
         setIsDraggingPlayhead(false);
-        onSeekEnd?.(timeFromClientX(e.clientX));
+        if (!isTrimMode) {
+            onSeekEnd?.(timeFromClientX(e.clientX));
+        }
     };
 
     const handleTrimHandleDown = (which: TrimHandle) => (e: React.PointerEvent<HTMLDivElement>) => {
@@ -172,7 +178,7 @@ const TrackList: React.FC<TrackListProps> = ({
     };
 
     return (
-        <div ref={containerRef} className="track-list-container">
+        <div className="track-list-container">
             <div className="track-list-header">
                 <div className="track-time-display">
                     <span className="time-current">{formatTime(currentTime)}</span>
@@ -208,25 +214,27 @@ const TrackList: React.FC<TrackListProps> = ({
                     </div>
                 )}
             </div>
-            <div
-                className={
-                    'playhead-line' +
-                    (isDraggingPlayhead ? ' playhead-line--dragging' : '') +
-                    (isTrimMode ? ' playhead-line--locked' : '')
-                }
-                style={{ left: `${playheadPercent}%` }}
-                onPointerDown={handlePlayheadPointerDown}
-                onPointerMove={handlePlayheadPointerMove}
-                onPointerUp={handlePlayheadPointerUp}
-                onPointerCancel={handlePlayheadPointerUp}
-            >
-                <div className="playhead-head" />
-            </div>
-            {activeMenu && (
-                <div className="track-list-overlay" onClick={() => setActiveMenu(null)} />
-            )}
+            <div ref={containerRef} className="track-lanes-scroll">
+                <div
+                    className={
+                        'playhead-line' +
+                        (isDraggingPlayhead ? ' playhead-line--dragging' : '') +
+                        (isTrimMode ? ' playhead-line--locked' : '')
+                    }
+                    style={{ left: `${playheadPercent}%` }}
+                    aria-disabled={isTrimMode}
+                    onPointerDown={handlePlayheadPointerDown}
+                    onPointerMove={handlePlayheadPointerMove}
+                    onPointerUp={handlePlayheadPointerUp}
+                    onPointerCancel={handlePlayheadPointerUp}
+                >
+                    <div className="playhead-head" />
+                </div>
+                {activeMenu && (
+                    <div className="track-list-overlay" onClick={() => setActiveMenu(null)} />
+                )}
  
-            {tracks.map((track, index) => {
+                {tracks.map((track, index) => {
                 const color = LANE_COLORS[index % LANE_COLORS.length];
                 const isSelected = track.id === selectedTrackId;
                 const isTrimming = !!trimTarget && trimTarget.id === track.id;
@@ -341,7 +349,8 @@ const TrackList: React.FC<TrackListProps> = ({
                         </div>
                     </div>
                 );
-            })}
+                })}
+            </div>
  
             {/* Floating context menu rendered outside of the map loop */}
             {activeMenu && activeTrack && (
