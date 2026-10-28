@@ -3,6 +3,27 @@
     font-family: sans-serif;
 }
 
+.projects-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.sign-out-button {
+    background-color: var(--danger);
+}
+
+.sign-out-button:hover {
+    background-color: var(--danger-hover);
+}
+
+.sign-out-button:disabled {
+    cursor: wait;
+    opacity: 0.65;
+}
+
 .new-project-section {
     margin-bottom: 20px;
 }
