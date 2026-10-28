@@ -90,7 +90,11 @@ const TrackList: React.FC<TrackListProps> = ({
     const isRangeChanged = !!trimTarget && !!range && (range.start > 0.001 || range.end < trimTarget.duration - 0.001);
     //leaving trim mode discards any unapplied handle positions
     useEffect(() => {
-        if(!isTrimMode) setTrimRange(null);
+        if(!isTrimMode) {
+            setTrimRange(null);
+        } else {
+            setIsDraggingPlayhead(false);
+        }
     }, [isTrimMode]);
 
     //Converts pointers x pos into a time, using the same width percentage mapping for the playhead line.
@@ -114,7 +118,7 @@ const TrackList: React.FC<TrackListProps> = ({
     };
 
     const handlePlayheadPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
-        if (!isDraggingPlayhead) return;
+        if (isTrimMode || !isDraggingPlayhead) return;
         onSeek?.(timeFromClientX(e.clientX));
     };
 
@@ -124,7 +128,9 @@ const TrackList: React.FC<TrackListProps> = ({
             e.currentTarget.releasePointerCapture(e.pointerId);
         }
         setIsDraggingPlayhead(false);
-        onSeekEnd?.(timeFromClientX(e.clientX));
+        if (!isTrimMode) {
+            onSeekEnd?.(timeFromClientX(e.clientX));
+        }
     };
 
     const handleTrimHandleDown = (which: TrimHandle) => (e: React.PointerEvent<HTMLDivElement>) => {
@@ -216,6 +222,7 @@ const TrackList: React.FC<TrackListProps> = ({
                         (isTrimMode ? ' playhead-line--locked' : '')
                     }
                     style={{ left: `${playheadPercent}%` }}
+                    aria-disabled={isTrimMode}
                     onPointerDown={handlePlayheadPointerDown}
                     onPointerMove={handlePlayheadPointerMove}
                     onPointerUp={handlePlayheadPointerUp}

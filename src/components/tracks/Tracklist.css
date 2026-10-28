@@ -182,6 +182,11 @@
     cursor: grabbing;
 }
 
+.playhead-line--locked {
+    pointer-events: none;
+    cursor: default;
+}
+
 .playhead-head {
     position: absolute;
     top: -2px;
