@@ -10,6 +10,7 @@ const iceServers = {
 const LiveJam = ({ projectId }: { projectId: string }) => {
   const [isConnected, setIsConnected] = useState(false);
   const [status, setStatus] = useState('Not connected');
+  const [isMuted, setIsMuted] = useState(false);
 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
@@ -26,25 +27,25 @@ const LiveJam = ({ projectId }: { projectId: string }) => {
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
       });
-      console.log('✓ Got local mic stream:', stream);
+      console.log('Got local mic stream:', stream);
       localStreamRef.current = stream;
 
       // RTCPeerConnection is the actual object representing the connection to the other person
       const pc = new RTCPeerConnection(iceServers);
-      console.log('✓ Created RTCPeerConnection:', pc);
+      console.log('Created RTCPeerConnection:', pc);
       peerConnectionRef.current = pc;
 
       // Give mic audio to WebRTC so it gets sent when connected
       stream.getTracks().forEach((track) => {
         pc.addTrack(track, stream);
-        console.log('✓ Added track to peer connection:', track.kind);
+        console.log('Added track to peer connection:', track.kind);
       });
 
       pc.ontrack = (event) => {
-        console.log('✓ Received remote track:', event.track.kind);
+        console.log('Received remote track:', event.track.kind);
         if (remoteAudioRef.current) {
           remoteAudioRef.current.srcObject = event.streams[0];
-          console.log('✓ Attached remote audio to player');
+          console.log('Attached remote audio to player');
         }
         setStatus('Connected!');
         setIsConnected(true);
@@ -53,14 +54,14 @@ const LiveJam = ({ projectId }: { projectId: string }) => {
       // Fires repeatedly as WebRTC discovers possible network paths for reaching us
       pc.onicecandidate = (event) => {
         if (event.candidate) {
-          console.log('✓ ICE candidate discovered:', event.candidate.candidate);
+          console.log('ICE candidate discovered:', event.candidate.candidate);
           channelRef.current?.send({
             type: 'broadcast',
             event: 'ice-candidate',
             payload: { candidate: event.candidate },
           });
         } else {
-          console.log('✓ ICE candidate gathering complete');
+          console.log('ICE candidate gathering complete');
         }
       };
 
@@ -71,16 +72,16 @@ const LiveJam = ({ projectId }: { projectId: string }) => {
       // One shared channel per project
       // Only carries small JSON payloads, never audio
       const channel = supabase.channel(`live-jam-${projectId}`);
-      console.log('✓ Created Supabase channel:', `live-jam-${projectId}`);
+      console.log('Created Supabase channel:', `live-jam-${projectId}`);
       channelRef.current = channel;
 
       // Add the presence listener BEFORE subscribing
       channel.on('presence', { event: 'join' }, async ({ key, newPresences }) => {
-        console.log('✓ Other peer joined! Presence key:', key);
+        console.log('Other peer joined! Presence key:', key);
 
         // Only create offer if we haven't already
         if (offerSentRef.current) {
-          console.log('→ Offer already sent, waiting for answer...');
+          console.log('Offer already sent, waiting for answer...');
           return;
         }
 
@@ -89,11 +90,11 @@ const LiveJam = ({ projectId }: { projectId: string }) => {
 
         try {
           const offer = await pc.createOffer();
-          console.log('✓ Created offer');
+          console.log('Created offer');
           await pc.setLocalDescription(offer);
-          console.log('✓ Set local description (offer)');
+          console.log('Set local description (offer)');
           channel.send({ type: 'broadcast', event: 'offer', payload: { offer } });
-          console.log('✓ Sent offer to remote peer');
+          console.log('Sent offer to remote peer');
         } catch (err) {
           console.error('Error creating/sending offer:', err);
           offerSentRef.current = false; // Reset on error
@@ -102,30 +103,30 @@ const LiveJam = ({ projectId }: { projectId: string }) => {
 
       // Someone else is already in live-jam and sent an offer, accept it and send back an answer
       channel.on('broadcast', { event: 'offer' }, async ({ payload }: { payload: { offer: RTCSessionDescriptionInit } }) => {
-        console.log('✓ Received offer from remote peer');
+        console.log('Received offer from remote peer');
         console.log('Offer details:', payload.offer);
         await pc.setRemoteDescription(new RTCSessionDescription(payload.offer));
-        console.log('✓ Set remote description (offer)');
+        console.log('Set remote description (offer)');
         const answer = await pc.createAnswer();
-        console.log('✓ Created answer');
+        console.log('Created answer');
         await pc.setLocalDescription(answer);
-        console.log('✓ Set local description (answer)');
+        console.log('Set local description (answer)');
         channel.send({ type: 'broadcast', event: 'answer', payload: { answer } });
-        console.log('✓ Sent answer to remote peer');
+        console.log('Sent answer to remote peer');
       });
 
       channel.on('broadcast', { event: 'answer' }, async ({ payload }: { payload: { answer: RTCSessionDescriptionInit } }) => {
-        console.log('✓ Received answer from remote peer');
+        console.log('Received answer from remote peer');
         console.log('Answer details:', payload.answer);
         await pc.setRemoteDescription(new RTCSessionDescription(payload.answer));
-        console.log('✓ Set remote description (answer)');
+        console.log('Set remote description (answer)');
       });
 
       channel.on('broadcast', { event: 'ice-candidate' }, async ({ payload }: { payload: { candidate: RTCIceCandidateInit } }) => {
         try {
-          console.log('✓ Received ICE candidate from remote peer');
+          console.log('Received ICE candidate from remote peer');
           await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
-          console.log('✓ Added remote ICE candidate');
+          console.log('Added remote ICE candidate');
         } catch (err) {
           console.error('Error adding ICE candidate:', err);
         }
@@ -136,14 +137,24 @@ const LiveJam = ({ projectId }: { projectId: string }) => {
         console.log('Channel subscription status:', subStatus);
         if (subStatus !== 'SUBSCRIBED') return;
 
-        console.log('✓ Channel subscribed successfully');
+        console.log('Channel subscribed successfully');
 
         await channel.track({ joinedAt: Date.now() });
-        console.log('✓ Tracked own presence');
+        console.log('Tracked own presence');
       });
     } catch (err) {
-      console.error('✗ Error starting session:', err);
+      console.error('Error starting session:', err);
       setStatus(`Error: ${err}`);
+    }
+  };
+
+  const toggleMute = () => {
+    if(localStreamRef.current){
+      localStreamRef.current.getAudioTracks().forEach((track) => {
+        track.enabled = !track.enabled;
+      });
+      setIsMuted((prev) => !prev);
+      console.log(isMuted ? 'Unmuted' : 'Muted');
     }
   };
 
@@ -158,7 +169,8 @@ const LiveJam = ({ projectId }: { projectId: string }) => {
     offerSentRef.current = false;
     setIsConnected(false);
     setStatus('Not connected');
-    console.log('✓ Session ended');
+    setIsMuted(false);
+    console.log('Session ended');
   };
 
   return (
@@ -168,7 +180,12 @@ const LiveJam = ({ projectId }: { projectId: string }) => {
       {!isConnected ? (
         <button onClick={startSession}>Start / Join Session</button>
       ) : (
-        <button onClick={endSession}>Leave Session</button>
+        <div style={{display: 'flex', gap: '10px'}}>
+          <button onClick={toggleMute}>
+            {isMuted ? 'Unmute' : 'Mute'}
+          </button>
+          <button onClick={endSession}>Leave Session</button>
+        </div>
       )}
       <audio ref={remoteAudioRef} autoPlay />
     </div>
