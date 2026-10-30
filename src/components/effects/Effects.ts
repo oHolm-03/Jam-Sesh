@@ -325,6 +325,9 @@ const phaserProcessor: EffectProcessor = {
                     filter.frequency.value = newParams.baseFreq;
                 });
             },
+            dispose: () => {
+                lfo.stop();
+            },
         };
     },
 };

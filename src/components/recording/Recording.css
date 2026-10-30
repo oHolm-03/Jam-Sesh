@@ -31,20 +31,38 @@
     cursor: not-allowed;
 }
 
-.recording-distortion-toggle {
+.monitor-effect-toggle {
     display: flex;
     align-items: center;
     gap: 6px;
     cursor: pointer;
 }
 
-.recording-distortion-sliders {
+.monitor-effects-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.monitor-effects-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.monitor-effect-controls {
+    padding-top: 8px;
+    border-top: 1px solid rgba(128, 128, 128, 0.25);
+}
+
+.monitor-effect-sliders {
     display: flex;
     flex-wrap: wrap;
     gap: 16px;
+    margin-top: 6px;
 }
 
-.recording-distortion-sliders label {
+.monitor-effect-sliders label {
     display: flex;
     flex-direction: column;
     gap: 4px;

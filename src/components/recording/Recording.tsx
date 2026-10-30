@@ -5,6 +5,7 @@ import { ConnectEffectsChain } from '../../hooks/useEffectsEngine';
 import { TrackAudioRefs } from '../../hooks/useTracks';
 import { useRecorder } from '../../hooks/useRecorder';
 import { useMonitoring } from '../../hooks/useMonitoring';
+import { EFFECT_DEFINITIONS } from '../effects/Effects';
 import './Recording.css';
 
 type Props = {
@@ -17,7 +18,7 @@ type Props = {
     connectEffectsChain: ConnectEffectsChain;
 };
 
-// Input side only: recording to the selected track, plus live input monitoring with distortion.
+// Input side only: recording to the selected track, plus live input monitoring effects.
 const Recording = ({
     selectedTrackId,
     selectedDeviceId,
@@ -42,9 +43,7 @@ const Recording = ({
         connectEffectsChain,
     });
 
-    const { distortionParams, setDistortionParams } = monitoring;
-    const setParam = (key: keyof typeof distortionParams, value: number) =>
-        setDistortionParams((p) => ({ ...p, [key]: value }));
+    const selectedEffectTypes = new Set(monitoring.monitorEffects.map((effect) => effect.type));
 
     return (
         <section className="recording-panel">
@@ -77,38 +76,54 @@ const Recording = ({
                     <button onClick={monitoring.stopMonitoring}>Stop Monitoring</button>
                 )}
 
-                <label className="recording-distortion-toggle">
-                    <input
-                        type="checkbox"
-                        checked={monitoring.distortionOn}
-                        onChange={(e) => monitoring.setDistortionOn(e.target.checked)}
-                    />
-                    Distortion (for monitoring)
-                </label>
             </div>
 
-            {monitoring.distortionOn && (
-                <div className="recording-distortion-sliders">
-                    <label>
-                        Drive
-                        <input type="range" min={1} max={400}
-                            value={distortionParams.drive}
-                            onChange={(e) => setParam('drive', Number(e.target.value))} />
-                    </label>
-                    <label>
-                        Tone
-                        <input type="range" min={500} max={20000}
-                            value={distortionParams.tone}
-                            onChange={(e) => setParam('tone', Number(e.target.value))} />
-                    </label>
-                    <label>
-                        Level
-                        <input type="range" min={0} max={2} step={0.01}
-                            value={distortionParams.level}
-                            onChange={(e) => setParam('level', Number(e.target.value))} />
-                    </label>
+            <div className="monitor-effects-panel" aria-label="Live monitoring effects">
+                <div className="monitor-effects-list">
+                    {EFFECT_DEFINITIONS.map((definition) => (
+                        <label key={definition.type} className="monitor-effect-toggle">
+                            <input
+                                type="checkbox"
+                                checked={selectedEffectTypes.has(definition.type)}
+                                onChange={() => monitoring.toggleEffect(definition.type)}
+                            />
+                            {definition.label}
+                        </label>
+                    ))}
                 </div>
-            )}
+
+                {monitoring.monitorEffects.map((effect) => {
+                    const definition = EFFECT_DEFINITIONS.find((item) => item.type === effect.type);
+                    if (!definition) return null;
+
+                    return (
+                        <div key={effect.type} className="monitor-effect-controls">
+                            <strong>{definition.label}</strong>
+                            <div className="monitor-effect-sliders">
+                                {definition.params.map((param) => (
+                                    <label key={param.key}>
+                                        {param.label}
+                                        <input
+                                            type="range"
+                                            min={param.min}
+                                            max={param.max}
+                                            step={param.step ?? 1}
+                                            value={effect.params[param.key]}
+                                            onChange={(e) =>
+                                                monitoring.updateEffectParam(
+                                                    effect.type,
+                                                    param.key,
+                                                    Number(e.target.value)
+                                                )
+                                            }
+                                        />
+                                    </label>
+                                ))}
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
         </section>
     );
 };
