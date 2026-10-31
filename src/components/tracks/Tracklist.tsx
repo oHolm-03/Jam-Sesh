@@ -12,6 +12,8 @@ export type TrackData = {
     muted: boolean;
     effects: TrackEffectInstance[];
     waveformPeaks: WaveformPeak[] | null;
+    gainDb: number;
+    volumeDb: number;
 };
 
 type TrackListProps = {

@@ -86,6 +86,8 @@ export function useTracks(projectId: string, getAudioContext: () => AudioContext
                     muted: false,
                     effects: row.effects ?? [],
                     waveformPeaks,
+                    gainDb: 0,
+                    volumeDb: 0,
                 });
             }
 
@@ -115,7 +117,7 @@ export function useTracks(projectId: string, getAudioContext: () => AudioContext
         getTrackAudioRefs(newTrack.id);
         setTracks((prev) => [
             ...prev,
-            { id: newTrack.id, name: newTrack.name, hasRecording: false, duration: 0, muted: false, effects: [], waveformPeaks: null },
+            { id: newTrack.id, name: newTrack.name, hasRecording: false, duration: 0, muted: false, effects: [], waveformPeaks: null, gainDb: 0, volumeDb: 0 },
         ]);
         setSelectedTrackId(newTrack.id);
     };

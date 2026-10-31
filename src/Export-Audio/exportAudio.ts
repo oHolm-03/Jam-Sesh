@@ -114,6 +114,20 @@ export async function exportProject(
 
             const source = offlineCtx.createBufferSource();
             source.buffer = buffer;
+
+            const gainDb = track.gainDb ?? 0;
+            const volumeDb = track.volumeDb ?? 0;
+            const gainMultiplier =
+                Math.pow(10, gainDb / 20) *
+                Math.pow(10, volumeDb / 20);
+            const gainNode = offlineCtx.createGain();
+            gainNode.gain.value = gainMultiplier;
+
+            source.connect(gainNode);
+            gainNode.connect(offlineCtx.destination);
+            source.start(0);
+
+            source.buffer = buffer;
             source.connect(offlineCtx.destination);
             source.start(0);
         });

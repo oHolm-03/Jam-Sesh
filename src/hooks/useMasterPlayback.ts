@@ -91,7 +91,9 @@ export function useMasterPlayback({ projectId, tracks, getTrackAudioRefs, getAud
             source.buffer = refs.audioBuffer;
 
             const muteGain = ctx.createGain();
-            muteGain.gain.value = track.muted ? 0 : 1;
+            const gainMultiplier = Math.pow(10, track.gainDb / 20);
+            const volumeMultiplier = Math.pow(10, track.volumeDb / 20);
+            muteGain.gain.value = track.muted ? 0 : gainMultiplier * volumeMultiplier;
             refs.muteGainNode = muteGain;
 
             const cleanupEffects = connectEffectsChain(ctx, source, muteGain, track.effects, track.id);
