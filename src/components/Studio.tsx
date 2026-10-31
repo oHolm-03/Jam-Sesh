@@ -209,9 +209,8 @@ const Studio = ({ projectId, onBack }: Props) => {
                                         max="24"
                                         step="0.1"
                                         value={selectedTrack.gainDb}
-                                        onChange={(e) => trackApi.updateTrackState(selectedTrack.id, {
-                                            gainDb: Number(e.target.value),
-                                        })}
+                                        onChange={(e) => trackApi.updateTrackGain(selectedTrack.id, Number(e.target.value)
+                                        )}
                                     />
                                 </label>
                             </div>

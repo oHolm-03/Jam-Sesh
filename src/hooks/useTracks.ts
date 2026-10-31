@@ -16,6 +16,7 @@ export function useTracks(projectId: string, getAudioContext: () => AudioContext
 
     const trackAudioRefsRef = useRef<Map<string, TrackAudioRefs>>(new Map());
     const effectsSaveTimeoutRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+    const gainSaveTimeoutRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
     const getTrackAudioRefs = useCallback((trackId: string): TrackAudioRefs => {
         let refs = trackAudioRefsRef.current.get(trackId);
@@ -41,11 +42,14 @@ export function useTracks(projectId: string, getAudioContext: () => AudioContext
 
             const { data: trackRows, error } = await supabase
                 .from('tracks')
-                .select('id, name, effects')
+                .select('id, name, effects, gain_db')
                 .eq('project_id', projectId)
                 .order('created_at', { ascending: true });
 
-            if (error || !trackRows) return;
+            if (error || !trackRows) {
+                if (error) console.error('Failed to load tracks:', error);
+                return;
+            }
 
             const loaded: TrackData[] = [];
 
@@ -86,7 +90,7 @@ export function useTracks(projectId: string, getAudioContext: () => AudioContext
                     muted: false,
                     effects: row.effects ?? [],
                     waveformPeaks,
-                    gainDb: 0,
+                    gainDb: Number(row.gain_db ?? 0),
                     volumeDb: 0,
                 });
             }
@@ -101,6 +105,28 @@ export function useTracks(projectId: string, getAudioContext: () => AudioContext
     const saveTrackEffects = async (trackId: string, effects: TrackEffectInstance[]) => {
         const { error } = await supabase.from('tracks').update({ effects }).eq('id', trackId);
         if (error) console.error('Failed to save track effects:', error);
+    };
+
+    const updateTrackGain = (trackId: string, gainDb: number) => {
+        updateTrackState(trackId, { gainDb });
+
+        const existing = gainSaveTimeoutRef.current.get(trackId);
+        if (existing) clearTimeout(existing);
+
+        const timeout = setTimeout(async () => {
+            const { error } = await supabase
+                .from('tracks')
+                .update({ gain_db: gainDb })
+                .eq('id', trackId);
+
+            if (error) {
+                console.error('Failed to save track gain:', error);
+                return;
+            }
+            gainSaveTimeoutRef.current.delete(trackId);
+        }, 500);
+
+        gainSaveTimeoutRef.current.set(trackId, timeout);
     };
 
     const addTrack = async () => {
@@ -274,5 +300,6 @@ export function useTracks(projectId: string, getAudioContext: () => AudioContext
         toggleEffect,
         updateEffectParam,
         trimTrack,
+        updateTrackGain,
     };
 }
