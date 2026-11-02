@@ -66,7 +66,12 @@ const Studio = ({ projectId, onBack }: Props) => {
             <DeviceSelect devices={devices} value={selectedDeviceId} onChange={setSelectedDeviceId} />
 
             <div className="live-jam-container">
-                <LiveJam projectId={projectId} />
+                <LiveJam
+                    projectId={projectId}
+                    getAudioContext={getAudioContext}
+                    registryRef={registryRef}
+                    connectEffectsChain={connectEffectsChain}
+                />
             </div>
 
             <button

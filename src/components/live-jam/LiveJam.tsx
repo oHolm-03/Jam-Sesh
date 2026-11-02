@@ -1,5 +1,9 @@
-import React, { useState, useRef } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
+import type { MutableRefObject } from 'react';
 import { supabase } from '../../supabaseClient';
+import { EFFECT_DEFINITIONS, TrackEffectInstance } from '../effects/Effects';
+import { EffectUpdateRegistry } from '../../audio/connectEffectsChain';
+import { ConnectEffectsChain } from '../../hooks/useEffectsEngine';
 
 /* A STUN server is a public service that helps your device figure out its own reachable public address 
    (most devices sit behind a router/NAT and don't know their outside facing address on their own) */
@@ -7,16 +11,63 @@ const iceServers = {
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }],
 };
 
-const LiveJam = ({ projectId }: { projectId: string }) => {
+type Props = {
+  projectId: string;
+  getAudioContext: () => AudioContext;
+  registryRef: MutableRefObject<EffectUpdateRegistry>;
+  connectEffectsChain: ConnectEffectsChain;
+};
+
+const LiveJam = ({ projectId, getAudioContext, registryRef, connectEffectsChain }: Props) => {
   const [isConnected, setIsConnected] = useState(false);
   const [status, setStatus] = useState('Not connected');
   const [isMuted, setIsMuted] = useState(false);
+  const [liveEffects, setLiveEffects] = useState<TrackEffectInstance[]>([]);
 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const channelRef = useRef<ReturnType<typeof supabase.channel> | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
+  const rawStreamRef = useRef<MediaStream | null>(null);
+  const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const destinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
+  const cleanupEffectsRef = useRef<(() => void) | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const offerSentRef = useRef(false);
+  const liveEffectsRef = useRef<TrackEffectInstance[]>([]);
+  const liveEffectTypes = liveEffects.map((effect) => effect.type).join('|');
+
+  liveEffectsRef.current = liveEffects;
+
+  useEffect(() => {
+    liveEffects.forEach((effect) => {
+      registryRef.current.get(`live-jam:${effect.type}`)?.(effect.params);
+    });
+  }, [liveEffects, registryRef]);
+
+  useEffect(() => {
+    if (!sourceRef.current || !destinationRef.current) return;
+
+    cleanupEffectsRef.current?.();
+    sourceRef.current.disconnect();
+    cleanupEffectsRef.current = connectEffectsChain(
+      getAudioContext(),
+      sourceRef.current,
+      destinationRef.current,
+      liveEffectsRef.current,
+      'live-jam'
+    );
+  }, [liveEffectTypes, connectEffectsChain, getAudioContext]);
+
+  useEffect(() => {
+    return () => {
+      cleanupEffectsRef.current?.();
+      sourceRef.current?.disconnect();
+      rawStreamRef.current?.getTracks().forEach((track) => track.stop());
+      localStreamRef.current?.getTracks().forEach((track) => track.stop());
+      peerConnectionRef.current?.close();
+      channelRef.current?.unsubscribe();
+    };
+  }, []);
 
   const startSession = async () => {
     setStatus('Connecting...');
@@ -28,7 +79,21 @@ const LiveJam = ({ projectId }: { projectId: string }) => {
         audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
       });
       console.log('Got local mic stream:', stream);
-      localStreamRef.current = stream;
+      rawStreamRef.current = stream;
+
+      const ctx = getAudioContext();
+      const source = ctx.createMediaStreamSource(stream);
+      const destination = ctx.createMediaStreamDestination();
+      sourceRef.current = source;
+      destinationRef.current = destination;
+      cleanupEffectsRef.current = connectEffectsChain(
+        ctx,
+        source,
+        destination,
+        liveEffectsRef.current,
+        'live-jam'
+      );
+      localStreamRef.current = destination.stream;
 
       // RTCPeerConnection is the actual object representing the connection to the other person
       const pc = new RTCPeerConnection(iceServers);
@@ -36,8 +101,9 @@ const LiveJam = ({ projectId }: { projectId: string }) => {
       peerConnectionRef.current = pc;
 
       // Give mic audio to WebRTC so it gets sent when connected
-      stream.getTracks().forEach((track) => {
-        pc.addTrack(track, stream);
+      const processedStream = localStreamRef.current;
+      processedStream.getAudioTracks().forEach((track) => {
+        pc.addTrack(track, processedStream);
         console.log('Added track to peer connection:', track.kind);
       });
 
@@ -158,12 +224,40 @@ const LiveJam = ({ projectId }: { projectId: string }) => {
     }
   };
 
+  const toggleEffect = (type: string) => {
+    setLiveEffects((current) => {
+      const exists = current.some((effect) => effect.type === type);
+      if (exists) return current.filter((effect) => effect.type !== type);
+
+      const definition = EFFECT_DEFINITIONS.find((effect) => effect.type === type);
+      if (!definition) return current;
+      return [...current, { type, params: { ...definition.defaultParams } }];
+    });
+  };
+
+  const updateEffectParam = (type: string, key: string, value: number) => {
+    setLiveEffects((current) =>
+      current.map((effect) =>
+        effect.type === type
+          ? { ...effect, params: { ...effect.params, [key]: value } }
+          : effect
+      )
+    );
+  };
+
   const endSession = () => {
     console.log('=== Ending jam session ===');
     peerConnectionRef.current?.close();
     peerConnectionRef.current = null;
+    cleanupEffectsRef.current?.();
+    cleanupEffectsRef.current = null;
+    sourceRef.current?.disconnect();
+    sourceRef.current = null;
     localStreamRef.current?.getTracks().forEach((track) => track.stop());
     localStreamRef.current = null;
+    rawStreamRef.current?.getTracks().forEach((track) => track.stop());
+    rawStreamRef.current = null;
+    destinationRef.current = null;
     channelRef.current?.unsubscribe();
     channelRef.current = null;
     offerSentRef.current = false;
@@ -177,6 +271,50 @@ const LiveJam = ({ projectId }: { projectId: string }) => {
     <div style={{ marginTop: 20 }}>
       <h3>Live Jam Session</h3>
       <p>Status: {status}</p>
+      <div style={{ marginBottom: 12 }}>
+        <strong>Live Jam Effects</strong>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 8 }}>
+          {EFFECT_DEFINITIONS.map((definition) => (
+            <label key={definition.type} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input
+                type="checkbox"
+                checked={liveEffects.some((effect) => effect.type === definition.type)}
+                onChange={() => toggleEffect(definition.type)}
+              />
+              {definition.label}
+            </label>
+          ))}
+        </div>
+      </div>
+
+      {liveEffects.map((effect) => {
+        const definition = EFFECT_DEFINITIONS.find((item) => item.type === effect.type);
+        if (!definition) return null;
+
+        return (
+          <div key={effect.type} style={{ marginBottom: 10 }}>
+            <strong>{definition.label}</strong>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 6 }}>
+              {definition.params.map((param) => (
+                <label key={param.key} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                  {param.label}
+                  <input
+                    type="range"
+                    min={param.min}
+                    max={param.max}
+                    step={param.step ?? 1}
+                    value={effect.params[param.key]}
+                    onChange={(e) =>
+                      updateEffectParam(effect.type, param.key, Number(e.target.value))
+                    }
+                  />
+                </label>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+
       {!isConnected ? (
         <button onClick={startSession}>Start / Join Session</button>
       ) : (
