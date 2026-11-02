@@ -45,6 +45,21 @@ export function useMasterPlayback({ projectId, tracks, getTrackAudioRefs, getAud
 
     useEffect(() => { isLoopingRef.current = isLooping; }, [isLooping]);
     useEffect(() => { tracksRef.current = tracks; }, [tracks]);
+    useEffect(() => {
+        const ctx = getAudioContext();
+        tracks.forEach((track) => {
+            const gainNode = getTrackAudioRefs(track.id).muteGainNode;
+            if (!gainNode) return;
+
+            const gainMultiplier = Math.pow(10, track.gainDb / 20);
+            const volumeMultiplier = Math.pow(10, track.volumeDb / 20);
+            gainNode.gain.setTargetAtTime(
+                track.muted ? 0 : gainMultiplier * volumeMultiplier,
+                ctx.currentTime,
+                0.01
+            );
+        });
+    }, [tracks, getTrackAudioRefs, getAudioContext]);
 
     const duration = Math.max(0, ...tracks.map((t) => t.duration));
     const getDuration = () => Math.max(0, ...tracksRef.current.map((t) => t.duration));
@@ -91,7 +106,9 @@ export function useMasterPlayback({ projectId, tracks, getTrackAudioRefs, getAud
             source.buffer = refs.audioBuffer;
 
             const muteGain = ctx.createGain();
-            muteGain.gain.value = track.muted ? 0 : 1;
+            const gainMultiplier = Math.pow(10, track.gainDb / 20);
+            const volumeMultiplier = Math.pow(10, track.volumeDb / 20);
+            muteGain.gain.value = track.muted ? 0 : gainMultiplier * volumeMultiplier;
             refs.muteGainNode = muteGain;
 
             const cleanupEffects = connectEffectsChain(ctx, source, muteGain, track.effects, track.id);

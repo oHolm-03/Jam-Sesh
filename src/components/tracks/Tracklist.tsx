@@ -12,6 +12,8 @@ export type TrackData = {
     muted: boolean;
     effects: TrackEffectInstance[];
     waveformPeaks: WaveformPeak[] | null;
+    gainDb: number;
+    volumeDb: number;
 };
 
 type TrackListProps = {
@@ -243,6 +245,7 @@ const TrackList: React.FC<TrackListProps> = ({
                     (isSelected ? ' track-lane--selected' : '') +
                     (isTrimming ? ' track-lane--trimming' : '');
                 const trackWidthPercent = ((track.duration || 0) / maxDuration) * 100;
+                const gainMultiplier = Math.pow(10, track.gainDb / 20);
  
                 return (
                     <div
@@ -280,8 +283,8 @@ const TrackList: React.FC<TrackListProps> = ({
                                             key={i}
                                             x1={i}
                                             x2={i}
-                                            y1={50 - p.max * 48}
-                                            y2={50 - p.min * 48}
+                                            y1={50 - p.max * gainMultiplier * 48}
+                                            y2={50 - p.min * gainMultiplier * 48}
                                             stroke="rgba(255,255,255,0.85)"
                                             strokeWidth={1}
                                         />
