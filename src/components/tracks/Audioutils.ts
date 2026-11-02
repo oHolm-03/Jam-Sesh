@@ -15,7 +15,7 @@ export const computeWaveformPeaks = (buffer: AudioBuffer, numBuckets= 200): Wave
         for(let j=start; j<end; j++){
             const sample = channelData[j];
             if(sample > max) max = sample;
-            if(sample < max) min = sample; // potential bug: should be if(sample < min) min=sample
+            if(sample < min) min = sample;
         }
         peaks.push({min, max});
     }
