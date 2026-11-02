@@ -207,6 +207,17 @@ const Studio = ({ projectId, onBack }: Props) => {
                                 >
                                     Delete Track
                                 </button>
+                                <label>Gain: {selectedTrack.gainDb.toFixed(1)} db
+                                    <input
+                                        type="range"
+                                        min="-24"
+                                        max="24"
+                                        step="0.1"
+                                        value={selectedTrack.gainDb}
+                                        onChange={(e) => trackApi.updateTrackGain(selectedTrack.id, Number(e.target.value)
+                                        )}
+                                    />
+                                </label>
                             </div>
                         </div>
                     ) : (

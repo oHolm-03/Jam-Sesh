@@ -22,7 +22,10 @@ export function useRecorder({ selectedTrackId, selectedDeviceId, getAudioContext
         const trackId = selectedTrackId;
 
         const stream = await navigator.mediaDevices.getUserMedia({
-            audio: { deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined },
+            audio: { deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
+                echoCancellation: false,
+                noiseSuppression: false,
+                autoGainControl: false, },
         });
 
         const recorder = new MediaRecorder(stream);
