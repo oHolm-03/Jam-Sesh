@@ -53,15 +53,23 @@ export function useMonitoring({ selectedDeviceId, getAudioContext, registryRef, 
     };
 
     const startMonitoring = async () => {
-        const stream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-                deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
-                echoCancellation: false,
-                noiseSuppression: false,
-                autoGainControl: false,
-            },
-        });
         const ctx = getAudioContext();
+        if (ctx.state === 'suspended') {
+            await ctx.resume();
+        }
+
+        const audioConstraints: MediaTrackConstraints & { latency: number } = {
+            deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+            channelCount: 1,
+            latency: 0,
+        };
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+            audio: audioConstraints,
+        });
         const source = ctx.createMediaStreamSource(stream);
 
         streamRef.current = stream;
