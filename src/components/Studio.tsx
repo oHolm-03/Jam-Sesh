@@ -68,6 +68,7 @@ const Studio = ({ projectId, onBack }: Props) => {
             <div className="live-jam-container">
                 <LiveJam
                     projectId={projectId}
+                    selectedDeviceId={selectedDeviceId}
                     getAudioContext={getAudioContext}
                     registryRef={registryRef}
                     connectEffectsChain={connectEffectsChain}
