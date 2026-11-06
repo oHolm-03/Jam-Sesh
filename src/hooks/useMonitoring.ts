@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { EFFECT_DEFINITIONS, TrackEffectInstance } from '../components/effects/Effects';
+import { TrackEffectInstance } from '../components/effects/Effects';
+import { LIVE_EFFECT_DEFINITIONS } from '../components/effects/LiveEffects';
 import { EffectUpdateRegistry } from '../audio/connectEffectsChain';
 import { ConnectEffectsChain } from './useEffectsEngine';
 
@@ -84,7 +85,7 @@ export function useMonitoring({ selectedDeviceId, getAudioContext, registryRef, 
             const exists = current.some((effect) => effect.type === type);
             if (exists) return current.filter((effect) => effect.type !== type);
 
-            const definition = EFFECT_DEFINITIONS.find((effect) => effect.type === type);
+            const definition = LIVE_EFFECT_DEFINITIONS.find((effect) => effect.type === type);
             if (!definition) return current;
             return [...current, { type, params: { ...definition.defaultParams } }];
         });
