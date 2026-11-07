@@ -58,6 +58,11 @@ export function useMonitoring({ selectedDeviceId, getAudioContext, registryRef, 
         if (ctx.state === 'suspended') {
             await ctx.resume();
         }
+        console.log('Live monitoring audio latency:', {
+            baseLatency: ctx.baseLatency,
+            outputLatency: ctx.outputLatency,
+            sampleRate: ctx.sampleRate,
+        });
 
         const audioConstraints: MediaTrackConstraints & { latency: number } = {
             deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
