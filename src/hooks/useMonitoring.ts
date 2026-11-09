@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
-import { EFFECT_DEFINITIONS, TrackEffectInstance } from '../components/effects/Effects';
+import { TrackEffectInstance } from '../components/effects/Effects';
+import { LIVE_EFFECT_DEFINITIONS } from '../components/effects/LiveEffects';
 import { EffectUpdateRegistry } from '../audio/connectEffectsChain';
 import { ConnectEffectsChain } from './useEffectsEngine';
 
@@ -53,15 +54,28 @@ export function useMonitoring({ selectedDeviceId, getAudioContext, registryRef, 
     };
 
     const startMonitoring = async () => {
-        const stream = await navigator.mediaDevices.getUserMedia({
-            audio: {
-                deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
-                echoCancellation: false,
-                noiseSuppression: false,
-                autoGainControl: false,
-            },
-        });
         const ctx = getAudioContext();
+        if (ctx.state === 'suspended') {
+            await ctx.resume();
+        }
+        console.log('Live monitoring audio latency:', {
+            baseLatency: ctx.baseLatency,
+            outputLatency: ctx.outputLatency,
+            sampleRate: ctx.sampleRate,
+        });
+
+        const audioConstraints: MediaTrackConstraints & { latency: number } = {
+            deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false,
+            channelCount: 1,
+            latency: 0,
+        };
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+            audio: audioConstraints,
+        });
         const source = ctx.createMediaStreamSource(stream);
 
         streamRef.current = stream;
@@ -76,7 +90,7 @@ export function useMonitoring({ selectedDeviceId, getAudioContext, registryRef, 
             const exists = current.some((effect) => effect.type === type);
             if (exists) return current.filter((effect) => effect.type !== type);
 
-            const definition = EFFECT_DEFINITIONS.find((effect) => effect.type === type);
+            const definition = LIVE_EFFECT_DEFINITIONS.find((effect) => effect.type === type);
             if (!definition) return current;
             return [...current, { type, params: { ...definition.defaultParams } }];
         });

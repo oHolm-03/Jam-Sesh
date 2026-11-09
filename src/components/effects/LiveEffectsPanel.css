@@ -1,0 +1,37 @@
+.live-effects-panel {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.live-effects-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.live-effect-toggle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    cursor: pointer;
+}
+
+.live-effect-controls {
+    padding-top: 8px;
+    border-top: 1px solid rgba(128, 128, 128, 0.25);
+}
+
+.live-effect-sliders {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-top: 6px;
+}
+
+.live-effect-sliders label {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    font-size: 0.85rem;
+}

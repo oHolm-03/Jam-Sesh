@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 import { supabase } from '../../supabaseClient';
-import { EFFECT_DEFINITIONS, TrackEffectInstance } from '../effects/Effects';
+import { TrackEffectInstance } from '../effects/Effects';
+import { LIVE_EFFECT_DEFINITIONS } from '../effects/LiveEffects';
+import LiveEffectsPanel from '../effects/LiveEffectsPanel';
 import { EffectUpdateRegistry } from '../../audio/connectEffectsChain';
 import { ConnectEffectsChain } from '../../hooks/useEffectsEngine';
 
@@ -13,12 +15,13 @@ const iceServers = {
 
 type Props = {
   projectId: string;
+  selectedDeviceId: string;
   getAudioContext: () => AudioContext;
   registryRef: MutableRefObject<EffectUpdateRegistry>;
   connectEffectsChain: ConnectEffectsChain;
 };
 
-const LiveJam = ({ projectId, getAudioContext, registryRef, connectEffectsChain }: Props) => {
+const LiveJam = ({ projectId, selectedDeviceId, getAudioContext, registryRef, connectEffectsChain }: Props) => {
   const [isConnected, setIsConnected] = useState(false);
   const [status, setStatus] = useState('Not connected');
   const [isMuted, setIsMuted] = useState(false);
@@ -31,6 +34,8 @@ const LiveJam = ({ projectId, getAudioContext, registryRef, connectEffectsChain 
   const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
   const destinationRef = useRef<MediaStreamAudioDestinationNode | null>(null);
   const cleanupEffectsRef = useRef<(() => void) | null>(null);
+  const senderRef = useRef<RTCRtpSender | null>(null);
+  const isMutedRef = useRef(false);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
   const offerSentRef = useRef(false);
   const liveEffectsRef = useRef<TrackEffectInstance[]>([]);
@@ -45,17 +50,7 @@ const LiveJam = ({ projectId, getAudioContext, registryRef, connectEffectsChain 
   }, [liveEffects, registryRef]);
 
   useEffect(() => {
-    if (!sourceRef.current || !destinationRef.current) return;
-
-    cleanupEffectsRef.current?.();
-    sourceRef.current.disconnect();
-    cleanupEffectsRef.current = connectEffectsChain(
-      getAudioContext(),
-      sourceRef.current,
-      destinationRef.current,
-      liveEffectsRef.current,
-      'live-jam'
-    );
+    configureSendPath(liveEffectTypes ? liveEffectsRef.current : []);
   }, [liveEffectTypes, connectEffectsChain, getAudioContext]);
 
   useEffect(() => {
@@ -69,31 +64,74 @@ const LiveJam = ({ projectId, getAudioContext, registryRef, connectEffectsChain 
     };
   }, []);
 
+  const configureSendPath = async (effects: TrackEffectInstance[]) => {
+    if (!rawStreamRef.current) return;
+
+    const rawTrack = rawStreamRef.current.getAudioTracks()[0];
+    if (!rawTrack) return;
+
+    if (effects.length === 0) {
+      cleanupEffectsRef.current?.();
+      cleanupEffectsRef.current = null;
+      sourceRef.current?.disconnect();
+      sourceRef.current = null;
+      localStreamRef.current?.getTracks().forEach((track) => track.stop());
+      destinationRef.current = null;
+      localStreamRef.current = null;
+
+      if (senderRef.current) {
+        await senderRef.current.replaceTrack(rawTrack);
+        if (senderRef.current.track) {
+          senderRef.current.track.enabled = !isMutedRef.current;
+        }
+      }
+      return;
+    }
+
+    cleanupEffectsRef.current?.();
+    sourceRef.current?.disconnect();
+
+    const ctx = getAudioContext();
+    if (ctx.state === 'suspended') await ctx.resume();
+
+    const source = ctx.createMediaStreamSource(rawStreamRef.current);
+    const destination = ctx.createMediaStreamDestination();
+    sourceRef.current = source;
+    destinationRef.current = destination;
+    cleanupEffectsRef.current = connectEffectsChain(
+      ctx,
+      source,
+      destination,
+      effects,
+      'live-jam'
+    );
+    localStreamRef.current = destination.stream;
+
+    const processedTrack = destination.stream.getAudioTracks()[0];
+    if (processedTrack && senderRef.current) {
+      await senderRef.current.replaceTrack(processedTrack);
+      processedTrack.enabled = !isMutedRef.current;
+    }
+  };
+
   const startSession = async () => {
     setStatus('Connecting...');
     console.log('=== Starting jam session ===');
 
     try {
-      // Same audio constraints as monitoring/recording
+      const audioConstraints: MediaTrackConstraints & { latency: number } = {
+        deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+        channelCount: 1,
+        latency: 0,
+      };
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+        audio: audioConstraints,
       });
-      console.log('Got local mic stream:', stream);
+      console.log('Got local audio stream:', stream);
       rawStreamRef.current = stream;
-
-      const ctx = getAudioContext();
-      const source = ctx.createMediaStreamSource(stream);
-      const destination = ctx.createMediaStreamDestination();
-      sourceRef.current = source;
-      destinationRef.current = destination;
-      cleanupEffectsRef.current = connectEffectsChain(
-        ctx,
-        source,
-        destination,
-        liveEffectsRef.current,
-        'live-jam'
-      );
-      localStreamRef.current = destination.stream;
 
       // RTCPeerConnection is the actual object representing the connection to the other person
       const pc = new RTCPeerConnection(iceServers);
@@ -101,11 +139,15 @@ const LiveJam = ({ projectId, getAudioContext, registryRef, connectEffectsChain 
       peerConnectionRef.current = pc;
 
       // Give mic audio to WebRTC so it gets sent when connected
-      const processedStream = localStreamRef.current;
-      processedStream.getAudioTracks().forEach((track) => {
-        pc.addTrack(track, processedStream);
+      rawStreamRef.current.getAudioTracks().forEach((track) => {
+        senderRef.current = pc.addTrack(track, rawStreamRef.current!);
+        track.enabled = !isMutedRef.current;
         console.log('Added track to peer connection:', track.kind);
       });
+
+      if (liveEffectsRef.current.length > 0) {
+        await configureSendPath(liveEffectsRef.current);
+      }
 
       pc.ontrack = (event) => {
         console.log('Received remote track:', event.track.kind);
@@ -215,13 +257,11 @@ const LiveJam = ({ projectId, getAudioContext, registryRef, connectEffectsChain 
   };
 
   const toggleMute = () => {
-    if(localStreamRef.current){
-      localStreamRef.current.getAudioTracks().forEach((track) => {
-        track.enabled = !track.enabled;
-      });
-      setIsMuted((prev) => !prev);
-      console.log(isMuted ? 'Unmuted' : 'Muted');
-    }
+    const nextMuted = !isMutedRef.current;
+    isMutedRef.current = nextMuted;
+    senderRef.current?.track && (senderRef.current.track.enabled = !nextMuted);
+    setIsMuted(nextMuted);
+    console.log(nextMuted ? 'Muted' : 'Unmuted');
   };
 
   const toggleEffect = (type: string) => {
@@ -229,7 +269,7 @@ const LiveJam = ({ projectId, getAudioContext, registryRef, connectEffectsChain 
       const exists = current.some((effect) => effect.type === type);
       if (exists) return current.filter((effect) => effect.type !== type);
 
-      const definition = EFFECT_DEFINITIONS.find((effect) => effect.type === type);
+      const definition = LIVE_EFFECT_DEFINITIONS.find((effect) => effect.type === type);
       if (!definition) return current;
       return [...current, { type, params: { ...definition.defaultParams } }];
     });
@@ -249,6 +289,7 @@ const LiveJam = ({ projectId, getAudioContext, registryRef, connectEffectsChain 
     console.log('=== Ending jam session ===');
     peerConnectionRef.current?.close();
     peerConnectionRef.current = null;
+    senderRef.current = null;
     cleanupEffectsRef.current?.();
     cleanupEffectsRef.current = null;
     sourceRef.current?.disconnect();
@@ -261,6 +302,7 @@ const LiveJam = ({ projectId, getAudioContext, registryRef, connectEffectsChain 
     channelRef.current?.unsubscribe();
     channelRef.current = null;
     offerSentRef.current = false;
+    isMutedRef.current = false;
     setIsConnected(false);
     setStatus('Not connected');
     setIsMuted(false);
@@ -271,49 +313,12 @@ const LiveJam = ({ projectId, getAudioContext, registryRef, connectEffectsChain 
     <div style={{ marginTop: 20 }}>
       <h3>Live Jam Session</h3>
       <p>Status: {status}</p>
-      <div style={{ marginBottom: 12 }}>
-        <strong>Live Jam Effects</strong>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 8 }}>
-          {EFFECT_DEFINITIONS.map((definition) => (
-            <label key={definition.type} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <input
-                type="checkbox"
-                checked={liveEffects.some((effect) => effect.type === definition.type)}
-                onChange={() => toggleEffect(definition.type)}
-              />
-              {definition.label}
-            </label>
-          ))}
-        </div>
-      </div>
-
-      {liveEffects.map((effect) => {
-        const definition = EFFECT_DEFINITIONS.find((item) => item.type === effect.type);
-        if (!definition) return null;
-
-        return (
-          <div key={effect.type} style={{ marginBottom: 10 }}>
-            <strong>{definition.label}</strong>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 6 }}>
-              {definition.params.map((param) => (
-                <label key={param.key} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {param.label}
-                  <input
-                    type="range"
-                    min={param.min}
-                    max={param.max}
-                    step={param.step ?? 1}
-                    value={effect.params[param.key]}
-                    onChange={(e) =>
-                      updateEffectParam(effect.type, param.key, Number(e.target.value))
-                    }
-                  />
-                </label>
-              ))}
-            </div>
-          </div>
-        );
-      })}
+      <LiveEffectsPanel
+        definitions={LIVE_EFFECT_DEFINITIONS}
+        effects={liveEffects}
+        onToggleEffect={toggleEffect}
+        onUpdateEffectParam={updateEffectParam}
+      />
 
       {!isConnected ? (
         <button onClick={startSession}>Start / Join Session</button>

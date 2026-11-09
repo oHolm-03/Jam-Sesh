@@ -1,4 +1,5 @@
 import { EFFECT_PROCESSORS, TrackEffectInstance } from '../components/effects/Effects';
+import { LIVE_EFFECT_PROCESSORS } from '../components/effects/LiveEffects';
 
 // Maps "<liveKey>:<effectType>" -> function that pushes new params into a running effect node
 export type EffectUpdateRegistry = Map<string, (params: Record<string, number>) => void>;
@@ -18,7 +19,7 @@ export function connectEffectsChain(
     const disposeFns: (() => void)[] = [];
 
     effects.forEach((effect) => {
-        const processor = EFFECT_PROCESSORS[effect.type];
+        const processor = LIVE_EFFECT_PROCESSORS[effect.type] ?? EFFECT_PROCESSORS[effect.type];
         if (!processor) return;
 
         const built = processor.build(audioContext, effect.params);
