@@ -1,6 +1,5 @@
 import React from 'react';
-import { LiveEffectInstance } from './LiveEffects';
-import { LiveEffectDefinition } from './LiveEffects';
+import { LiveEffectDefinition, LiveEffectInstance } from './LiveEffects';
 import './LiveEffectsPanel.css';
 
 type Props = {
@@ -19,7 +18,7 @@ const LiveEffectsPanel: React.FC<Props> = ({
     const selectedTypes = new Set(effects.map((effect) => effect.type));
 
     return (
-        <div className="live-effects-panel" aria-label="Live monitoring effects">
+        <div className="live-effects-panel" aria-label="Live audio effects">
             <div className="live-effects-list">
                 {definitions.map((definition) => (
                     <label key={definition.type} className="live-effect-toggle">

@@ -1,7 +1,9 @@
 import React, { useEffect, useState, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 import { supabase } from '../../supabaseClient';
-import { EFFECT_DEFINITIONS, TrackEffectInstance } from '../effects/Effects';
+import { TrackEffectInstance } from '../effects/Effects';
+import { LIVE_EFFECT_DEFINITIONS } from '../effects/LiveEffects';
+import LiveEffectsPanel from '../effects/LiveEffectsPanel';
 import { EffectUpdateRegistry } from '../../audio/connectEffectsChain';
 import { ConnectEffectsChain } from '../../hooks/useEffectsEngine';
 
@@ -117,13 +119,16 @@ const LiveJam = ({ projectId, selectedDeviceId, getAudioContext, registryRef, co
     console.log('=== Starting jam session ===');
 
     try {
+      const audioConstraints: MediaTrackConstraints & { latency: number } = {
+        deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false,
+        channelCount: 1,
+        latency: 0,
+      };
       const stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          deviceId: selectedDeviceId ? { exact: selectedDeviceId } : undefined,
-          echoCancellation: false,
-          noiseSuppression: false,
-          autoGainControl: false,
-        },
+        audio: audioConstraints,
       });
       console.log('Got local audio stream:', stream);
       rawStreamRef.current = stream;
@@ -264,7 +269,7 @@ const LiveJam = ({ projectId, selectedDeviceId, getAudioContext, registryRef, co
       const exists = current.some((effect) => effect.type === type);
       if (exists) return current.filter((effect) => effect.type !== type);
 
-      const definition = EFFECT_DEFINITIONS.find((effect) => effect.type === type);
+      const definition = LIVE_EFFECT_DEFINITIONS.find((effect) => effect.type === type);
       if (!definition) return current;
       return [...current, { type, params: { ...definition.defaultParams } }];
     });
@@ -308,49 +313,12 @@ const LiveJam = ({ projectId, selectedDeviceId, getAudioContext, registryRef, co
     <div style={{ marginTop: 20 }}>
       <h3>Live Jam Session</h3>
       <p>Status: {status}</p>
-      <div style={{ marginBottom: 12 }}>
-        <strong>Live Jam Effects</strong>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 12, marginTop: 8 }}>
-          {EFFECT_DEFINITIONS.map((definition) => (
-            <label key={definition.type} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <input
-                type="checkbox"
-                checked={liveEffects.some((effect) => effect.type === definition.type)}
-                onChange={() => toggleEffect(definition.type)}
-              />
-              {definition.label}
-            </label>
-          ))}
-        </div>
-      </div>
-
-      {liveEffects.map((effect) => {
-        const definition = EFFECT_DEFINITIONS.find((item) => item.type === effect.type);
-        if (!definition) return null;
-
-        return (
-          <div key={effect.type} style={{ marginBottom: 10 }}>
-            <strong>{definition.label}</strong>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 6 }}>
-              {definition.params.map((param) => (
-                <label key={param.key} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
-                  {param.label}
-                  <input
-                    type="range"
-                    min={param.min}
-                    max={param.max}
-                    step={param.step ?? 1}
-                    value={effect.params[param.key]}
-                    onChange={(e) =>
-                      updateEffectParam(effect.type, param.key, Number(e.target.value))
-                    }
-                  />
-                </label>
-              ))}
-            </div>
-          </div>
-        );
-      })}
+      <LiveEffectsPanel
+        definitions={LIVE_EFFECT_DEFINITIONS}
+        effects={liveEffects}
+        onToggleEffect={toggleEffect}
+        onUpdateEffectParam={updateEffectParam}
+      />
 
       {!isConnected ? (
         <button onClick={startSession}>Start / Join Session</button>
