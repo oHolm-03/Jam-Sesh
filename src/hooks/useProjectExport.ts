@@ -2,11 +2,13 @@ import { useState } from 'react';
 import { exportProject, ExportFormat } from '../Export-Audio/exportAudio';
 import { TrackData } from '../components/tracks/Tracklist';
 import { TrackAudioRefs } from './useTracks';
+import { TrackRow } from './useTrackLayout';
 
 export function useProjectExport(
     tracks: TrackData[],
     trackAudioRefsRef: React.MutableRefObject<Map<string, TrackAudioRefs>>,
-    projectName: string
+    projectName: string,
+    trackGroups: TrackRow[]
 ) {
     const [exportFormat, setExportFormat] = useState<ExportFormat>('wav');
     const [isExporting, setIsExporting] = useState(false);
@@ -21,9 +23,9 @@ export function useProjectExport(
             });
 
             if (audioBuffers.size === 0) throw new Error('No audio found to export');
-            await exportProject(tracks, audioBuffers, projectName, exportFormat);
-        } catch (err: any) {
-            alert(err.message || 'Export failed');
+            await exportProject(tracks, audioBuffers, projectName, exportFormat, trackGroups);
+        } catch (error) {
+            alert(error instanceof Error ? error.message : 'Export failed');
         } finally {
             setIsExporting(false);
         }

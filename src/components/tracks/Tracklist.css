@@ -9,7 +9,37 @@
 .track-lanes-scroll {
     position: relative;
     max-height: 380px;
-    overflow-y: auto;
+    overflow: auto;
+}
+
+.track-row {
+    display: flex;
+    position: relative;
+    width: max-content;
+    min-width: 100%;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.3);
+}
+
+.track-row--drop-target {
+    outline: 2px solid #fff;
+    outline-offset: -2px;
+    z-index: 1;
+}
+
+.track-new-row-drop {
+    display: flex;
+    box-sizing: border-box;
+    min-width: 100%;
+    min-height: 40px;
+    align-items: center;
+    justify-content: center;
+    border: 1px dashed rgba(255, 255, 255, 0.6);
+    color: var(--text-primary);
+    font-size: 12px;
+}
+
+.track-new-row-drop--active {
+    background: rgba(255, 255, 255, 0.15);
 }
 
 .track-list-overlay {
@@ -19,24 +49,62 @@
 }
 
 .track-lane {
+    box-sizing: border-box;
     position: relative;
+    flex: 0 0 min(640px, max(320px, 70vw));
+    width: min(640px, max(320px, 70vw));
     height: 76px;
     cursor: pointer;
     background: var(--lane-color);
+    user-select: none;
+}
+
+.track-lane--drop-before::before,
+.track-lane--drop-after::after {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 4px;
+    content: '';
+    background: #fff;
+    z-index: 8;
+    pointer-events: none;
+}
+
+.track-lane--drop-before::before {
+    left: 0;
+}
+
+.track-lane--drop-after::after {
+    right: 0;
 }
 
 .track-lane:not(:last-child) {
-    border-bottom: 1px solid rgba(0, 0, 0, 0.3);
+    border-right: 1px solid rgba(0, 0, 0, 0.3);
 }
 
-.track-lane:first-child {
+.track-row .track-lane {
+    border-radius: 0;
+}
+
+.track-row:first-child .track-lane:first-child {
     border-top-left-radius: 6px;
+}
+
+.track-row:first-child .track-lane:last-child {
     border-top-right-radius: 6px;
 }
 
-.track-lane:last-child {
+.track-row:last-child .track-lane:first-child {
     border-bottom-left-radius: 6px;
+}
+
+.track-row:last-child .track-lane:last-child {
     border-bottom-right-radius: 6px;
+}
+
+.track-lane--dragging {
+    opacity: 0.55;
 }
 
 .track-lane--selected {

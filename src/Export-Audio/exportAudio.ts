@@ -1,5 +1,6 @@
 import { Mp3Encoder } from "@breezystack/lamejs";
 import { TrackData } from "../components/tracks/Tracklist";
+import { scheduleTrackRows, TrackRow } from "../hooks/useTrackLayout";
 
 export type ExportFormat = 'wav' | 'mp3';
 
@@ -42,7 +43,7 @@ function audioBufferToWav(buffer: AudioBuffer): Blob {
 }
 
 //encode AudioBuffer into MP3 format via lamejs
-function audioBufferToMp3(buffer: AudioBuffer, kbps: number = 192): Blob {
+function audioBufferToMp3(buffer: AudioBuffer, kbps = 192): Blob {
     const channels = buffer.numberOfChannels;
     const sampleRate = buffer.sampleRate;
     const mp3encoder = new Mp3Encoder(channels, sampleRate, kbps);
@@ -87,50 +88,47 @@ function audioBufferToMp3(buffer: AudioBuffer, kbps: number = 192): Blob {
 export async function exportProject(
     tracks: TrackData[],
     audioBuffers: Map<string, AudioBuffer>,
-    projectName: string = 'project-export',
-    format: ExportFormat = 'wav'): 
-    Promise<void> { const unmutedTracks = tracks.filter((t) => !t.muted && t.hasRecording);
-        if(unmutedTracks.length === 0){
-            throw new Error('No unmuted tracks with audio found to export');
-        }
-        let maxDuration = 0;
-        unmutedTracks.forEach((t) => {
-            const buf = audioBuffers.get(t.id);
-            if(buf && buf.duration > maxDuration){
-                maxDuration = buf.duration;
-            }
-        });
+    projectName = 'project-export',
+    format: ExportFormat = 'wav',
+    trackGroups?: TrackRow[]
+): Promise<void> {
+    const unmutedTracks = tracks.filter((t) => !t.muted && t.hasRecording);
+    if (unmutedTracks.length === 0) {
+        throw new Error('No unmuted tracks with audio found to export');
+    }
+    const rows = trackGroups ?? tracks.map((track) => ({ id: track.id, tracks: [track] }));
+    const schedule = scheduleTrackRows(rows, (track) =>
+        audioBuffers.get(track.id)?.duration ?? track.duration
+    );
+    const maxDuration = schedule.duration;
 
-        if(maxDuration === 0){
-            throw new Error('No audio content found across active tracks.');
-        }
+    if (maxDuration === 0) {
+        throw new Error('No audio content found across active tracks.');
+    }
 
-        const sampleRate = 44100;
-        const offlineCtx = new OfflineAudioContext(2, Math.ceil(sampleRate*maxDuration), sampleRate);
+    const sampleRate = 44100;
+    const offlineCtx = new OfflineAudioContext(2, Math.ceil(sampleRate * maxDuration), sampleRate);
 
-        unmutedTracks.forEach((track) => {
-            const buffer = audioBuffers.get(track.id);
-            if(!buffer) return;
+    schedule.tracks.forEach(({ track, startTime }) => {
+        if (track.muted) return;
+        const buffer = audioBuffers.get(track.id);
+        if (!buffer) return;
 
-            const source = offlineCtx.createBufferSource();
-            source.buffer = buffer;
+        const source = offlineCtx.createBufferSource();
+        source.buffer = buffer;
 
-            const gainDb = track.gainDb ?? 0;
-            const volumeDb = track.volumeDb ?? 0;
-            const gainMultiplier =
-                Math.pow(10, gainDb / 20) *
-                Math.pow(10, volumeDb / 20);
-            const gainNode = offlineCtx.createGain();
-            gainNode.gain.value = gainMultiplier;
+        const gainDb = track.gainDb ?? 0;
+        const volumeDb = track.volumeDb ?? 0;
+        const gainMultiplier =
+            Math.pow(10, gainDb / 20) *
+            Math.pow(10, volumeDb / 20);
+        const gainNode = offlineCtx.createGain();
+        gainNode.gain.value = gainMultiplier;
 
-            source.connect(gainNode);
-            gainNode.connect(offlineCtx.destination);
-            source.start(0);
-
-            source.buffer = buffer;
-            source.connect(offlineCtx.destination);
-            source.start(0);
-        });
+        source.connect(gainNode);
+        gainNode.connect(offlineCtx.destination);
+        source.start(startTime);
+    });
 
         //render offline mix down
         const renderedBuffer = await offlineCtx.startRendering();

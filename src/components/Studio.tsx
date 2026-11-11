@@ -9,9 +9,10 @@ import { useAudioContext } from '../hooks/useAudioContext';
 import { useAudioDevices } from '../hooks/useAudioDevices';
 import { useProjectName } from '../hooks/useProjectName';
 import { useTracks } from '../hooks/useTracks';
+import { scheduleTrackRows, useTrackLayout } from '../hooks/useTrackLayout';
 import { useEffectsEngine } from '../hooks/useEffectsEngine';
 import { useProjectExport } from '../hooks/useProjectExport';
-import { useMasterPlayback, TransportControls } from '../hooks/useMasterPlayback';
+import type { TransportControls } from '../hooks/useMasterPlayback';
 
 import DeviceSelect from './DeviceSelect';
 import ExportControls from './ExportControls';
@@ -35,9 +36,19 @@ const Studio = ({ projectId, onBack }: Props) => {
 
     const trackApi = useTracks(projectId, getAudioContext);
     const { tracks, selectedTrackId, setSelectedTrackId } = trackApi;
+    const trackLayout = useTrackLayout(projectId, tracks);
 
     const { registryRef, connectEffectsChain } = useEffectsEngine(tracks);
-    const exporter = useProjectExport(tracks, trackApi.trackAudioRefsRef, projectName);
+    const exporter = useProjectExport(
+        tracks,
+        trackApi.trackAudioRefsRef,
+        projectName,
+        trackLayout.trackGroups
+    );
+    const projectDuration = scheduleTrackRows(
+        trackLayout.trackGroups,
+        (track) => track.duration
+    ).duration;
 
     const selectedTrack = tracks.find((t) => t.id === selectedTrackId) ?? null;
 
@@ -112,6 +123,7 @@ const Studio = ({ projectId, onBack }: Props) => {
             <Playback
                 projectId={projectId}
                 tracks={tracks}
+                trackGroups={trackLayout.trackGroups}
                 getTrackAudioRefs={trackApi.getTrackAudioRefs}
                 getAudioContext={getAudioContext}
                 connectEffectsChain={connectEffectsChain}
@@ -134,7 +146,11 @@ const Studio = ({ projectId, onBack }: Props) => {
                 </div>
 
                 <TrackList
+                    key={projectId}
                     tracks={tracks}
+                    trackRows={trackLayout.trackRows}
+                    trackOrder={trackLayout.trackOrder}
+                    projectDuration={projectDuration}
                     selectedTrackId={selectedTrackId}
                     currentTime={currentTime}
                     onSelectTrack={setSelectedTrackId}
@@ -147,6 +163,16 @@ const Studio = ({ projectId, onBack }: Props) => {
                     onSeekEnd={(time) => transportRef.current?.endScrub(time)}
                     isTrimMode={isTrimMode}
                     onTrimTrack={handleTrimTrack}
+                    onMoveTrackRelativeTo={(...args) => {
+                        transportRef.current?.beginScrub();
+                        transportRef.current?.scrubTo(0);
+                        trackLayout.moveTrackRelativeTo(...args);
+                    }}
+                    onMoveTrackToNewRow={(trackId) => {
+                        transportRef.current?.beginScrub();
+                        transportRef.current?.scrubTo(0);
+                        trackLayout.moveTrackToNewRow(trackId);
+                    }}
                 />
             </div>
 

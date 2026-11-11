@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { TrackData } from '../components/tracks/Tracklist';
 import { TrackAudioRefs } from './useTracks';
 import { ConnectEffectsChain } from './useEffectsEngine';
+import { scheduleTrackRows } from './useTrackLayout';
+import type { TrackRow } from './useTrackLayout';
 
 type MasterPlaybackState = {
     activeSources: AudioBufferSourceNode[];
@@ -21,12 +23,13 @@ export type TransportControls = {
 type Args = {
     projectId: string;
     tracks: TrackData[];
+    trackGroups: TrackRow[];
     getTrackAudioRefs: (trackId: string) => TrackAudioRefs;
     getAudioContext: () => AudioContext;
     connectEffectsChain: ConnectEffectsChain;
 };
 
-export function useMasterPlayback({ projectId, tracks, getTrackAudioRefs, getAudioContext, connectEffectsChain }: Args) {
+export function useMasterPlayback({ projectId, tracks, trackGroups, getTrackAudioRefs, getAudioContext, connectEffectsChain }: Args) {
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentTime, setCurrentTime] = useState(0);
     const [isLooping, setIsLooping] = useState(false);
@@ -40,11 +43,10 @@ export function useMasterPlayback({ projectId, tracks, getTrackAudioRefs, getAud
         generation: 0,
     });
     const isLoopingRef = useRef(false);
-    // Always-current tracks, so loop restarts and the progress bar don't read stale closures
-    const tracksRef = useRef<TrackData[]>(tracks);
+    const trackGroupsRef = useRef<TrackRow[]>(trackGroups);
 
     useEffect(() => { isLoopingRef.current = isLooping; }, [isLooping]);
-    useEffect(() => { tracksRef.current = tracks; }, [tracks]);
+    useEffect(() => { trackGroupsRef.current = trackGroups; }, [trackGroups]);
     useEffect(() => {
         const ctx = getAudioContext();
         tracks.forEach((track) => {
@@ -61,8 +63,12 @@ export function useMasterPlayback({ projectId, tracks, getTrackAudioRefs, getAud
         });
     }, [tracks, getTrackAudioRefs, getAudioContext]);
 
-    const duration = Math.max(0, ...tracks.map((t) => t.duration));
-    const getDuration = () => Math.max(0, ...tracksRef.current.map((t) => t.duration));
+    const getSchedule = () => scheduleTrackRows(
+        trackGroupsRef.current,
+        (track) => getTrackAudioRefs(track.id).audioBuffer?.duration ?? track.duration
+    );
+    const duration = getSchedule().duration;
+    const getDuration = () => getSchedule().duration;
 
     const updateProgress = () => {
         const master = masterRef.current;
@@ -81,26 +87,32 @@ export function useMasterPlayback({ projectId, tracks, getTrackAudioRefs, getAud
         if (master.animationFrame) cancelAnimationFrame(master.animationFrame);
     };
 
-    // Starts every recorded track from the same offset so they stay in sync.
-    // Each track gets its own effects chain + a mute gain node feeding the speakers.
+    // Tracks in a row play sequentially; separate rows remain synchronized.
     const startFrom = (offset: number) => {
         const ctx = getAudioContext();
-        const playable = tracksRef.current.filter((t) => t.hasRecording);
-        if (playable.length === 0) return;
+        const schedule = getSchedule();
+        const playable = schedule.tracks.filter((item) => item.startTime + item.duration > offset);
+        if (playable.length === 0) {
+            setCurrentTime(schedule.duration);
+            masterRef.current.playbackOffset = schedule.duration;
+            setIsPlaying(false);
+            return;
+        }
 
         const master = masterRef.current;
         master.isManualStop = false;
         master.activeSources = [];
         const gen = ++master.generation;
 
-        let remainingToEnd = playable.length;
+        let remainingToEnd = 0;
 
-        playable.forEach((track) => {
+        playable.forEach(({ track, startTime, duration: trackDuration }) => {
             const refs = getTrackAudioRefs(track.id);
             if (!refs.audioBuffer) {
-                remainingToEnd -= 1;
                 return;
             }
+            const trackOffset = Math.max(0, offset - startTime);
+            if (trackOffset >= trackDuration) return;
 
             const source = ctx.createBufferSource();
             source.buffer = refs.audioBuffer;
@@ -114,6 +126,7 @@ export function useMasterPlayback({ projectId, tracks, getTrackAudioRefs, getAud
             const cleanupEffects = connectEffectsChain(ctx, source, muteGain, track.effects, track.id);
             muteGain.connect(ctx.destination);
 
+            remainingToEnd += 1;
             source.onended = () => {
                 cleanupEffects();
                 remainingToEnd -= 1;
@@ -123,16 +136,26 @@ export function useMasterPlayback({ projectId, tracks, getTrackAudioRefs, getAud
                     if (isLoopingRef.current) {
                         startFrom(0);
                     } else {
-                        const totalDuration = getDuration();
+                        const totalDuration = schedule.duration;
                         setIsPlaying(false);
                         setCurrentTime(totalDuration);
                         master.playbackOffset = totalDuration;
                     }
                 }
             };
-            source.start(0, offset);
+            source.start(
+                ctx.currentTime + Math.max(0, startTime - offset),
+                trackOffset
+            );
             master.activeSources.push(source);
         });
+
+        if (remainingToEnd === 0) {
+            setCurrentTime(schedule.duration);
+            master.playbackOffset = schedule.duration;
+            setIsPlaying(false);
+            return;
+        }
 
         master.playbackOffset = offset;
         master.playbackStartContextTime = ctx.currentTime;
@@ -180,7 +203,6 @@ export function useMasterPlayback({ projectId, tracks, getTrackAudioRefs, getAud
         setIsPlaying(false);
         setCurrentTime(0);
         return () => stopAllActiveSources();
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [projectId]);
 
     //scrub functions for dragging the playhead

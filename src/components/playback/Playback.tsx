@@ -1,5 +1,6 @@
 import { useEffect, RefObject } from 'react';
 import { TrackData } from '../tracks/Tracklist';
+import { TrackRow } from '../../hooks/useTrackLayout';
 import { ConnectEffectsChain } from '../../hooks/useEffectsEngine';
 import { TrackAudioRefs } from '../../hooks/useTracks';
 import { useMasterPlayback, TransportControls } from '../../hooks/useMasterPlayback';
@@ -8,6 +9,7 @@ import './Playback.css';
 type Props = {
     projectId: string;
     tracks: TrackData[];
+    trackGroups: TrackRow[];
     getTrackAudioRefs: (trackId: string) => TrackAudioRefs;
     getAudioContext: () => AudioContext;
     connectEffectsChain: ConnectEffectsChain;
@@ -16,10 +18,11 @@ type Props = {
     transportRef?: RefObject<TransportControls | null>;
 };
 
-// Output side only: master transport that plays every recorded track in sync.
+// Output side only: master transport that plays each row sequentially with rows in sync.
 const Playback = ({
     projectId,
     tracks,
+    trackGroups,
     getTrackAudioRefs,
     getAudioContext,
     connectEffectsChain,
@@ -29,6 +32,7 @@ const Playback = ({
     const playback = useMasterPlayback({
         projectId,
         tracks,
+        trackGroups,
         getTrackAudioRefs,
         getAudioContext,
         connectEffectsChain,
