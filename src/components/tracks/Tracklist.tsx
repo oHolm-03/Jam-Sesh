@@ -298,7 +298,24 @@ const TrackList: React.FC<TrackListProps> = ({
                 {activeMenu && (
                     <div className="track-list-overlay" onClick={() => setActiveMenu(null)} />
                 )}
- 
+                <div className="track-timeline-content">
+                    {playheadRow && (
+                        <div
+                            className={
+                                'playhead-line' +
+                                (isDraggingPlayhead ? ' playhead-line--dragging' : '') +
+                                (isTrimMode ? ' playhead-line--locked' : '')
+                            }
+                            style={{ left: `${timelineXForTime(currentTime)}px` }}
+                            aria-disabled={isTrimMode}
+                            onPointerDown={handlePlayheadPointerDown}
+                            onPointerMove={handlePlayheadPointerMove}
+                            onPointerUp={handlePlayheadPointerUp}
+                            onPointerCancel={handlePlayheadPointerUp}
+                        >
+                            <div className="playhead-head" />
+                        </div>
+                    )}
                 {groupedTracks.map((row) => (
                     <div
                         key={row.id}
@@ -336,7 +353,7 @@ const TrackList: React.FC<TrackListProps> = ({
                             setDropPosition(null);
                         }}
                             >
-                            {row.tracks.map((track, rowTrackIndex) => {
+                            {row.tracks.map((track) => {
                 const index = tracks.findIndex((item) => item.id === track.id);
                         const color = LANE_COLORS[index % LANE_COLORS.length];
                         const isSelected = track.id === selectedTrackId;
@@ -413,23 +430,6 @@ const TrackList: React.FC<TrackListProps> = ({
                             setDropPosition(null);
                         }}
                     >
-                        {row.id === playheadRow?.id && rowTrackIndex === 0 && (
-                            <div
-                                className={
-                                    'playhead-line' +
-                                    (isDraggingPlayhead ? ' playhead-line--dragging' : '') +
-                                    (isTrimMode ? ' playhead-line--locked' : '')
-                                }
-                                style={{ left: `${timelineXForTime(currentTime)}px` }}
-                                aria-disabled={isTrimMode}
-                                onPointerDown={handlePlayheadPointerDown}
-                                onPointerMove={handlePlayheadPointerMove}
-                                onPointerUp={handlePlayheadPointerUp}
-                                onPointerCancel={handlePlayheadPointerUp}
-                            >
-                                <div className="playhead-head" />
-                            </div>
-                        )}
                         <div className="track-waveform-wrapper">
                             {track.hasRecording && track.waveformPeaks ? (
                                 <svg
@@ -548,6 +548,7 @@ const TrackList: React.FC<TrackListProps> = ({
                         Drop here to move the track to a new row
                     </div>
                 )}
+                </div>
             </div>
  
             {/* Floating context menu rendered outside of the map loop */}

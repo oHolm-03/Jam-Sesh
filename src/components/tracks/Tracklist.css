@@ -12,6 +12,12 @@
     overflow: auto;
 }
 
+.track-timeline-content {
+    position: relative;
+    width: max-content;
+    min-width: 100%;
+}
+
 .track-row {
     display: flex;
     position: relative;
